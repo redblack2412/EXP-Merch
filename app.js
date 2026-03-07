@@ -63,8 +63,10 @@ const STORAGE_EVENTS = "kiosk_events_v1";
 const STORAGE_ACTIVE_EVENT = "kiosk_active_event_v1";
 const STORAGE_CAPSULE = "kiosk_capsule_v1";
 const STORAGE_SCRAP = "kiosk_scrap_v1";
+const STORAGE_SITE_PASSWORD = "kiosk_site_password_v1";
 const DEFAULT_ADMIN_PIN = "1234";
 const DEFAULT_CAPSULE_PRICE = 2;
+const DEFAULT_SITE_PASSWORD = "1234";
 
 const memoryStorage = new Map();
 
@@ -125,6 +127,10 @@ const tourLabelEl = document.querySelector("#tour-label");
 const heroTaglineEl = document.querySelector("#hero-tagline");
 const homeEventLabel = document.querySelector("#home-event-label");
 const orderEventLabel = document.querySelector("#order-event-label");
+const accessGate = document.querySelector("#access-gate");
+const accessForm = document.querySelector("#access-form");
+const accessInput = document.querySelector("#access-input");
+const accessError = document.querySelector("#access-error");
 
 const adminDialog = document.querySelector("#admin-dialog");
 const closeAdminBtn = document.querySelector("#close-admin");
@@ -136,6 +142,7 @@ const adminProducts = document.querySelector("#admin-products");
 const inventoryList = document.querySelector("#inventory-list");
 const scrapList = document.querySelector("#scrap-list");
 const pinForm = document.querySelector("#pin-form");
+const sitePasswordForm = document.querySelector("#site-password-form");
 const discountForm = document.querySelector("#discount-form");
 const newDiscountBtn = document.querySelector("#new-discount");
 const discountList = document.querySelector("#discount-list");
@@ -537,6 +544,8 @@ const saveProducts = () => {
 const saveBranding = () => safeSetItem(STORAGE_BRANDING, JSON.stringify(branding));
 const loadAdminPin = () => safeGetItem(STORAGE_ADMIN_PIN) || DEFAULT_ADMIN_PIN;
 const saveAdminPin = (pin) => safeSetItem(STORAGE_ADMIN_PIN, pin);
+const loadSitePassword = () => String(safeGetItem(STORAGE_SITE_PASSWORD) || DEFAULT_SITE_PASSWORD).trim();
+const saveSitePassword = (password) => safeSetItem(STORAGE_SITE_PASSWORD, String(password).trim());
 const saveDiscounts = () => safeSetItem(STORAGE_DISCOUNTS, JSON.stringify(discountCodes));
 const saveSales = () => safeSetItem(STORAGE_SALES, JSON.stringify(salesLog));
 const saveEvents = () => safeSetItem(STORAGE_EVENTS, JSON.stringify(events));
@@ -547,6 +556,7 @@ const saveScrapEntries = () => safeSetItem(STORAGE_SCRAP, JSON.stringify(scrapEn
 let products = loadProducts();
 let branding = loadBranding();
 let adminPin = loadAdminPin();
+let sitePassword = loadSitePassword();
 let discountCodes = loadDiscounts();
 let salesLog = loadSales();
 let events = loadEvents(products);
@@ -558,6 +568,11 @@ let appliedDiscountCustomAmount = 0;
 let categories = [];
 let activeCategory = "Alle";
 let selectedProductId = "";
+
+if (String(sitePassword).trim().length < 4) {
+  sitePassword = DEFAULT_SITE_PASSWORD;
+  saveSitePassword(sitePassword);
+}
 
 const cart = new Map();
 
@@ -823,6 +838,40 @@ const visibleProducts = () => {
 
 const getProductAvailableStock = (product) =>
   product.variants.reduce((sum, variant) => sum + remainingStock(product.id, variant.id), 0);
+
+const clearAccessError = () => {
+  if (accessError) {
+    accessError.hidden = true;
+  }
+};
+
+const showAccessError = (message) => {
+  if (!accessError) {
+    return;
+  }
+  accessError.textContent = message || "Passwort ist falsch.";
+  accessError.hidden = false;
+};
+
+const lockSiteAccess = () => {
+  document.body.classList.add("access-locked");
+  if (accessGate) {
+    accessGate.hidden = false;
+  }
+  clearAccessError();
+  if (accessInput) {
+    accessInput.value = "";
+    window.requestAnimationFrame(() => accessInput.focus());
+  }
+};
+
+const unlockSiteAccess = () => {
+  document.body.classList.remove("access-locked");
+  if (accessGate) {
+    accessGate.hidden = true;
+  }
+  clearAccessError();
+};
 
 const showHomeView = () => {
   updateActiveEventLabels();
@@ -2524,6 +2573,9 @@ const openAdmin = () => {
   clearCapsuleForm();
   clearEventForm();
   clearDiscountForm();
+  if (sitePasswordForm) {
+    sitePasswordForm.reset();
+  }
   if (dataSyncFeedback) {
     dataSyncFeedback.textContent = "";
     dataSyncFeedback.classList.remove("error");
@@ -2583,7 +2635,8 @@ const exportDataBundle = () => {
       activeEventId,
       capsuleConfig,
       scrapEntries,
-      adminPin
+      adminPin,
+      sitePassword
     }
   };
   downloadJsonFile(makeExportFileName(), payload);
@@ -2633,6 +2686,12 @@ const importDataBundle = (rawPayload) => {
   if (/^[0-9]{4,}$/.test(importedPin)) {
     adminPin = importedPin;
   }
+  const importedSitePassword = String(appData.sitePassword || "").trim();
+  if (importedSitePassword.length >= 4) {
+    sitePassword = importedSitePassword;
+  } else {
+    sitePassword = DEFAULT_SITE_PASSWORD;
+  }
 
   appliedDiscountCode = "";
   appliedDiscountCustomAmount = 0;
@@ -2662,6 +2721,7 @@ const importDataBundle = (rawPayload) => {
   saveCapsuleConfig();
   saveScrapEntries();
   saveAdminPin(adminPin);
+  saveSitePassword(sitePassword);
 
   renderCategories();
   renderProducts();
@@ -2680,7 +2740,24 @@ const importDataBundle = (rawPayload) => {
   clearDiscountForm();
 };
 
+const applyAccessPassword = () => {
+  const entered = String(accessInput?.value || "").trim();
+  if (entered === sitePassword) {
+    unlockSiteAccess();
+    return true;
+  }
+  showAccessError("Passwort ist falsch.");
+  if (accessInput) {
+    accessInput.select();
+  }
+  return false;
+};
+
 const openPinPrompt = () => {
+  if (document.body.classList.contains("access-locked")) {
+    lockSiteAccess();
+    return;
+  }
   const enteredPin = window.prompt("Admin PIN eingeben:");
   if (enteredPin === null) {
     return;
@@ -2772,6 +2849,19 @@ const applyDiscountCode = () => {
     discountCustomAmountInput.focus();
   }
 };
+
+if (accessForm) {
+  accessForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    applyAccessPassword();
+  });
+}
+
+if (accessInput) {
+  accessInput.addEventListener("input", () => {
+    clearAccessError();
+  });
+}
 
 if (checkoutBtn) {
   checkoutBtn.addEventListener("click", checkout);
@@ -3320,6 +3410,31 @@ if (pinForm) {
   });
 }
 
+if (sitePasswordForm) {
+  sitePasswordForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+
+    const currentPassword = String(sitePasswordForm.elements.currentPassword.value || "").trim();
+    const newPassword = String(sitePasswordForm.elements.newPassword.value || "").trim();
+
+    if (currentPassword !== sitePassword) {
+      window.alert("Aktuelles Seitenpasswort ist falsch.");
+      sitePasswordForm.reset();
+      return;
+    }
+
+    if (newPassword.trim().length < 4) {
+      window.alert("Neues Seitenpasswort muss mindestens 4 Zeichen haben.");
+      return;
+    }
+
+    sitePassword = newPassword;
+    saveSitePassword(sitePassword);
+    sitePasswordForm.reset();
+    window.alert("Seitenpasswort wurde geändert.");
+  });
+}
+
 ensureEventsIntegrity();
 ensureCapsuleIntegrity();
 ensureScrapIntegrity();
@@ -3331,3 +3446,4 @@ renderProducts();
 renderCart();
 renderVariantDialog();
 showHomeView();
+lockSiteAccess();

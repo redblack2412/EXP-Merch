@@ -12,7 +12,27 @@
     />
     <link rel="stylesheet" href="styles.css" />
   </head>
-  <body>
+  <body class="access-locked">
+    <section id="access-gate" class="access-gate">
+      <div class="access-panel">
+        <h2>EXPLIZIT Merch Terminal</h2>
+        <p>Diese Seite ist geschützt. Bitte Zugangspasswort eingeben.</p>
+        <form id="access-form" class="pin-entry-form">
+          <input
+            id="access-input"
+            name="accessPassword"
+            type="password"
+            autocomplete="current-password"
+            required
+            placeholder="Zugangspasswort"
+          />
+          <div class="form-actions">
+            <button type="submit">Seite öffnen</button>
+          </div>
+        </form>
+        <p id="access-error" class="pin-error" hidden>Passwort ist falsch.</p>
+      </div>
+    </section>
     <div class="app-shell">
       <section id="home-view" class="home-view">
         <div class="home-panel">
@@ -252,6 +272,17 @@
           </label>
           <button type="submit">PIN ändern</button>
         </form>
+        <form id="site-password-form" class="admin-form">
+          <label>
+            Aktuelles Seitenpasswort
+            <input name="currentPassword" type="password" autocomplete="current-password" required />
+          </label>
+          <label>
+            Neues Seitenpasswort (mind. 4 Zeichen)
+            <input name="newPassword" type="password" autocomplete="new-password" required />
+          </label>
+          <button type="submit">Seitenpasswort ändern</button>
+        </form>
       </section>
       <section class="admin-section">
         <h4>Rabattcodes</h4>
@@ -427,7 +458,7 @@
       </li>
     </template>
 
-    <script src="app.js?v=20260307-17"></script>
+    <script src="app.js?v=20260307-18"></script>
     <script>
       (() => {
         const adminButtons = document.querySelectorAll(".open-admin-trigger");

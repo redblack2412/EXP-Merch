@@ -44,6 +44,20 @@ Wichtig:
 - Die Datei `.github/workflows/deploy-pages.yml` übernimmt das Deployment automatisch.
 - `.nojekyll` ist gesetzt, damit statische Assets unverändert ausgeliefert werden.
 
+## Schnell veröffentlichen (ein Befehl)
+Statt einzelner `git`-Befehle kannst du einfach das Skript nutzen:
+
+```bash
+cd "/Users/Bom/Documents/New project"
+./publish.sh "Meine Änderung"
+```
+
+Optional ohne Commit-Text:
+
+```bash
+./publish.sh
+```
+
 ## Anpassen
 - Merch-Artikel liegen in [`app.js`](./app.js) im Array `defaultProducts`.
 - Bandname, Tour-Label und Untertitel liegen in [`app.js`](./app.js) im Objekt `branding`.
@@ -63,6 +77,8 @@ Wichtig:
 - Änderungen werden im Browser per `localStorage` gespeichert und erscheinen direkt als Kachel auf der Bestellseite (wenn Bestand > 0).
 - Unter `Daten sichern` kannst du alle Admin-Daten als JSON exportieren und wieder importieren.
 - Damit kannst du die Datei z. B. über Google Drive zwischen Geräten synchron halten.
+- Die Seite hat eine Zugangssperre per Passwort (Standard: `1234`).
+- Unter `Admin` -> `Sicherheit` kannst du das Seitenpasswort ändern.
 
 ## Rabattcodes
 - Auf der Bestellseite im Warenkorb den Code eingeben und `Anwenden` klicken.
