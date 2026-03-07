@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EXPLIZIT Merch Terminal</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;800&family=Rajdhani:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <section id="home-view" class="home-view">
+        <div class="home-panel">
+          <div class="brand-mark" aria-hidden="true">
+            <img src="assets/EXP_zahnrad.png" alt="" onerror="this.onerror=null;this.src='assets/gear-logo.svg';" />
+          </div>
+          <p class="eyebrow" id="tour-label">Willkommen</p>
+          <h1 class="home-title" id="band-name">EXPLIZIT Merch Terminal</h1>
+          <p class="subtitle" id="hero-tagline">Wähle zuerst, was du machen möchtest.</p>
+          <p id="home-event-label" class="subtitle event-chip"></p>
+          <div class="home-actions">
+            <button id="open-order" class="checkout-btn" type="button">Bestellseite öffnen</button>
+            <button class="ghost-btn open-admin-trigger" type="button">Admin öffnen</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="order-view" class="order-view hidden">
+        <header class="order-topbar">
+          <button id="back-home" class="ghost-btn" type="button">Hauptmenü</button>
+          <p id="order-event-label" class="order-event-label"></p>
+          <button id="clear-cart" class="ghost-btn" type="button">Neu starten</button>
+        </header>
+
+        <main class="layout">
+          <section class="catalog-panel">
+            <nav class="category-nav" id="category-nav" aria-label="Kategorien"></nav>
+            <p id="catalog-empty" class="catalog-empty" hidden>Aktuell sind keine Artikel verfügbar.</p>
+            <div class="products-grid" id="products-grid"></div>
+          </section>
+
+          <aside class="cart-panel" aria-live="polite">
+            <h2>Deine Bestellung</h2>
+            <p class="cart-hint">Ausgabe am Stand B nach Zahlung.</p>
+            <ul id="cart-items" class="cart-items"></ul>
+            <div class="cart-summary">
+              <div class="summary-row">
+                <span>Zwischensumme</span>
+                <strong id="subtotal">0,00 €</strong>
+              </div>
+              <div class="summary-row" id="discount-row" hidden>
+                <span id="discount-label">Rabatt</span>
+                <strong id="discount-amount">-0,00 €</strong>
+              </div>
+              <div class="summary-row">
+                <span>Gesamt</span>
+                <strong id="grand-total">0,00 €</strong>
+              </div>
+              <div class="summary-row">
+                <span>Versand vor Ort</span>
+                <strong>Kostenlos</strong>
+              </div>
+              <div class="discount-box">
+                <label for="discount-input">Rabattcode</label>
+                <div class="discount-controls">
+                  <input id="discount-input" type="text" placeholder="Code eingeben" />
+                  <button id="apply-discount" type="button">Anwenden</button>
+                  <button id="clear-discount" type="button">Löschen</button>
+                </div>
+                <div id="discount-custom-wrap" class="discount-custom" hidden>
+                  <label for="discount-custom-amount">Rabattbetrag (EUR)</label>
+                  <div class="discount-custom-controls">
+                    <input id="discount-custom-amount" type="number" min="0" step="0.01" placeholder="z. B. 5,00" />
+                    <button id="apply-discount-custom" type="button">Betrag setzen</button>
+                  </div>
+                </div>
+                <p id="discount-feedback" class="discount-feedback"></p>
+              </div>
+              <button id="checkout-btn" class="checkout-btn" type="button" disabled>
+                Zur Kasse
+              </button>
+            </div>
+          </aside>
+        </main>
+      </section>
+    </div>
+
+    <dialog id="checkout-dialog">
+      <h3>Bestellung aufgenommen</h3>
+      <p id="checkout-text"></p>
+      <button id="close-dialog" type="button">Weiter</button>
+    </dialog>
+
+    <dialog id="admin-dialog" class="admin-dialog">
+      <div class="admin-head">
+        <h3>Admin Panel</h3>
+        <div class="admin-head-actions">
+          <button id="open-dashboard" type="button">Dashboard</button>
+          <button id="close-admin" type="button">Schließen</button>
+        </div>
+      </div>
+      <section class="admin-section">
+        <h4>Branding</h4>
+        <form id="branding-form" class="admin-form">
+          <label>
+            Titel (Browser)
+            <input name="appTitle" required />
+          </label>
+          <label>
+            Bandname
+            <input name="bandName" required />
+          </label>
+          <label>
+            Tour-Label
+            <input name="tourLabel" required />
+          </label>
+          <label>
+            Untertitel
+            <input name="tagline" required />
+          </label>
+          <button type="submit">Branding speichern</button>
+        </form>
+      </section>
+      <section class="admin-section">
+        <h4>Produkte</h4>
+        <form id="product-form" class="admin-form product-form">
+          <input type="hidden" name="productId" />
+          <label>
+            Name
+            <input name="name" required />
+          </label>
+          <label>
+            Kategorie
+            <input name="category" required />
+          </label>
+          <label>
+            Preis (EUR)
+            <input name="price" type="number" min="0" step="0.1" required />
+          </label>
+          <label>
+            Bilddatei (optional)
+            <input name="imageFile" type="file" accept="image/*" />
+          </label>
+          <label class="admin-check">
+            <input name="removeImage" type="checkbox" />
+            Vorhandenes Bild entfernen
+          </label>
+          <label>
+            Info (z. B. Größen)
+            <input name="meta" required />
+          </label>
+          <label>
+            Varianten + Bestand (z. B. S:12, M:10, L:8)
+            <input name="variants" required />
+          </label>
+          <div class="form-actions">
+            <button type="submit">Produkt speichern</button>
+            <button id="new-product" type="button">Neu</button>
+          </div>
+        </form>
+        <ul id="admin-products" class="admin-products"></ul>
+      </section>
+      <section class="admin-section">
+        <h4>Bestandsliste</h4>
+        <ul id="inventory-list" class="inventory-list"></ul>
+      </section>
+      <section class="admin-section">
+        <h4>Ausschussliste</h4>
+        <ul id="scrap-list" class="admin-products"></ul>
+      </section>
+      <section class="admin-section">
+        <h4>Kugelautomat</h4>
+        <label class="admin-check">
+          <input id="capsule-enabled" type="checkbox" />
+          Kugelautomat aktivieren (Automat-Preis in Varianten anzeigen)
+        </label>
+        <label class="admin-inline">
+          Preis pro Kugel (EUR)
+          <input id="capsule-price" type="number" min="0" step="0.01" />
+        </label>
+        <form id="capsule-form" class="admin-form">
+          <input type="hidden" name="entryId" />
+          <label>
+            Artikel
+            <select name="productId"></select>
+          </label>
+          <label>
+            Variante
+            <select name="variantId"></select>
+          </label>
+          <label>
+            Anzahl Kugeln
+            <input name="qty" type="number" min="1" step="1" required />
+          </label>
+          <div class="form-actions">
+            <button type="submit">Kugelinhalt speichern</button>
+            <button id="new-capsule-entry" type="button">Neu</button>
+          </div>
+        </form>
+        <ul id="capsule-list" class="admin-products"></ul>
+      </section>
+      <section class="admin-section">
+        <h4>Veranstaltungen</h4>
+        <form id="event-form" class="admin-form event-form">
+          <input type="hidden" name="eventId" />
+          <label>
+            Veranstaltung
+            <input name="name" required placeholder="z. B. Summer Blast 2026" />
+          </label>
+          <label>
+            Ort
+            <input name="location" placeholder="z. B. Berlin" />
+          </label>
+          <label>
+            Datum
+            <input name="date" type="date" />
+          </label>
+          <label class="admin-check">
+            <input name="setActive" type="checkbox" />
+            Als aktive Verkaufsveranstaltung setzen
+          </label>
+          <div class="event-products-wrap">
+            <p>Artikel für diese Veranstaltung</p>
+            <div id="event-product-picks" class="event-product-picks"></div>
+          </div>
+          <div class="form-actions">
+            <button type="submit">Veranstaltung speichern</button>
+            <button id="new-event" type="button">Neu</button>
+          </div>
+        </form>
+        <label class="admin-inline">
+          Aktive Veranstaltung
+          <select id="active-event-select"></select>
+        </label>
+        <ul id="event-list" class="admin-products"></ul>
+      </section>
+      <section class="admin-section">
+        <h4>Sicherheit</h4>
+        <form id="pin-form" class="admin-form">
+          <label>
+            Aktuelle PIN
+            <input name="currentPin" type="password" inputmode="numeric" pattern="[0-9]*" required />
+          </label>
+          <label>
+            Neue PIN (mind. 4 Ziffern)
+            <input name="newPin" type="password" inputmode="numeric" pattern="[0-9]*" required />
+          </label>
+          <button type="submit">PIN ändern</button>
+        </form>
+      </section>
+      <section class="admin-section">
+        <h4>Rabattcodes</h4>
+        <form id="discount-form" class="admin-form">
+          <input type="hidden" name="discountId" />
+          <label>
+            Code
+            <input name="code" required placeholder="z. B. TOUR10" />
+          </label>
+          <label>
+            Typ
+            <select name="type">
+              <option value="percent">Prozent (%)</option>
+              <option value="fixed">Fixbetrag (EUR)</option>
+              <option value="custom">Flexibler Betrag (im Warenkorb)</option>
+            </select>
+          </label>
+          <label>
+            Wert / Max (EUR)
+            <input name="value" type="number" min="0" step="0.01" required />
+          </label>
+          <p class="cart-hint">Bei flexiblem Betrag gilt: 0 = kein Maximalwert.</p>
+          <div class="form-actions">
+            <button type="submit">Code speichern</button>
+            <button id="new-discount" type="button">Neu</button>
+          </div>
+        </form>
+        <ul id="discount-list" class="admin-products"></ul>
+      </section>
+      <section class="admin-section">
+        <h4>Daten sichern</h4>
+        <div class="form-actions">
+          <button id="data-export" type="button">Daten exportieren (JSON)</button>
+          <button id="data-import" type="button">Daten importieren (JSON)</button>
+        </div>
+        <input id="data-import-file" type="file" accept="application/json,.json" hidden />
+        <p id="data-sync-feedback" class="cart-hint data-sync-feedback"></p>
+      </section>
+    </dialog>
+
+    <dialog id="dashboard-dialog" class="dashboard-dialog">
+      <div class="admin-head">
+        <h3>Verkaufsdashboard</h3>
+        <button id="close-dashboard" type="button">Schließen</button>
+      </div>
+      <section class="admin-section">
+        <h4>Filter</h4>
+        <form id="dashboard-filter-form" class="admin-form">
+          <label>
+            Zeitraum
+            <select id="dash-period">
+              <option value="all">Gesamt</option>
+              <option value="today">Heute</option>
+              <option value="7d">Letzte 7 Tage</option>
+              <option value="30d">Letzte 30 Tage</option>
+              <option value="custom">Benutzerdefiniert</option>
+            </select>
+          </label>
+          <label>
+            Von
+            <input id="dash-from" type="date" />
+          </label>
+          <label>
+            Bis
+            <input id="dash-to" type="date" />
+          </label>
+          <label>
+            Kategorie
+            <select id="dash-category">
+              <option value="all">Alle</option>
+            </select>
+          </label>
+          <label>
+            Artikel
+            <select id="dash-product">
+              <option value="all">Alle</option>
+            </select>
+          </label>
+          <label>
+            Veranstaltung
+            <select id="dash-event">
+              <option value="all">Alle</option>
+            </select>
+          </label>
+          <div class="form-actions">
+            <button type="submit">Filter anwenden</button>
+          </div>
+        </form>
+      </section>
+      <section class="admin-section">
+        <h4>Kennzahlen</h4>
+        <div class="dashboard-kpis">
+          <article class="kpi-card">
+            <p>Umsatz (Netto)</p>
+            <strong id="dash-revenue">0,00 €</strong>
+          </article>
+          <article class="kpi-card">
+            <p>Verkaufte Artikel</p>
+            <strong id="dash-items">0</strong>
+          </article>
+          <article class="kpi-card">
+            <p>Bestellungen</p>
+            <strong id="dash-orders">0</strong>
+          </article>
+          <article class="kpi-card">
+            <p>Rabatt gesamt</p>
+            <strong id="dash-discount">0,00 €</strong>
+          </article>
+        </div>
+      </section>
+      <section class="admin-section">
+        <h4>Grafiken</h4>
+        <div class="dashboard-charts">
+          <article class="chart-card">
+            <p>Umsatz nach Kategorie</p>
+            <canvas id="dash-pie" width="480" height="300"></canvas>
+            <ul id="dash-pie-legend" class="chart-legend"></ul>
+          </article>
+          <article class="chart-card">
+            <p>Top-Artikel (Menge)</p>
+            <canvas id="dash-bar" width="480" height="300"></canvas>
+          </article>
+        </div>
+      </section>
+      <section class="admin-section">
+        <h4>Artikelverkauf</h4>
+        <ul id="dash-item-list" class="admin-products"></ul>
+      </section>
+    </dialog>
+
+    <dialog id="pin-dialog" class="pin-dialog">
+      <h3>Admin PIN</h3>
+      <p>Bitte PIN eingeben, um das Admin-Panel zu öffnen.</p>
+      <form id="pin-entry-form" class="pin-entry-form">
+        <input id="pin-entry-input" name="pin" type="password" inputmode="numeric" pattern="[0-9]*" required />
+        <div class="form-actions">
+          <button type="submit">Öffnen</button>
+          <button id="cancel-pin" type="button">Abbrechen</button>
+        </div>
+      </form>
+      <p id="pin-error" class="pin-error" hidden>PIN ist falsch.</p>
+    </dialog>
+
+    <dialog id="variant-dialog" class="variant-dialog">
+      <div class="admin-head">
+        <h3 id="variant-title">Variante wählen</h3>
+        <button id="close-variant" type="button">Schließen</button>
+      </div>
+      <p id="variant-subtitle" class="cart-hint"></p>
+      <div id="variant-options" class="variant-options"></div>
+    </dialog>
+
+    <template id="product-card-template">
+      <article class="product-card">
+        <div class="thumb"></div>
+        <div class="product-info">
+          <h3></h3>
+        </div>
+      </article>
+    </template>
+
+    <template id="cart-item-template">
+      <li class="cart-item">
+        <div>
+          <p class="cart-name"></p>
+          <p class="cart-price"></p>
+        </div>
+        <div class="qty-controls">
+          <button class="minus" type="button" aria-label="Menge verringern">−</button>
+          <span class="qty"></span>
+          <button class="plus" type="button" aria-label="Menge erhöhen">+</button>
+        </div>
+      </li>
+    </template>
+
+    <script src="app.js?v=20260307-17"></script>
+    <script>
+      (() => {
+        const adminButtons = document.querySelectorAll(".open-admin-trigger");
+        const adminDialog = document.getElementById("admin-dialog");
+        if (!adminButtons.length || !adminDialog) {
+          return;
+        }
+
+        adminButtons.forEach((adminBtn) => {
+          adminBtn.addEventListener("click", () => {
+            if (window.__adminBoundByApp) {
+              return;
+            }
+
+            let pin = "1234";
+            try {
+              pin = localStorage.getItem("kiosk_admin_pin_v1") || "1234";
+            } catch {}
+
+            const enteredPin = window.prompt("Admin PIN eingeben:");
+            if (enteredPin === null) {
+              return;
+            }
+            if (enteredPin.trim() !== pin) {
+              window.alert("PIN ist falsch.");
+              return;
+            }
+
+            if (typeof adminDialog.showModal === "function") {
+              try {
+                adminDialog.showModal();
+                return;
+              } catch {}
+            }
+            adminDialog.setAttribute("open", "");
+          });
+        });
+      })();
+    </script>
+  </body>
+</html>
