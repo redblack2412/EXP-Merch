@@ -391,7 +391,7 @@ h1 {
   border-bottom: 1px solid rgba(242, 239, 0, 0.22);
   text-shadow: 0 3px 12px rgba(0, 0, 0, 0.65);
   background: linear-gradient(140deg, #293140, #141922);
-  background-size: contain;
+  background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
   position: relative;
@@ -406,6 +406,10 @@ h1 {
 
 .thumb.has-image::before {
   background: linear-gradient(to top, rgba(8, 10, 16, 0.4), rgba(8, 10, 16, 0.1));
+}
+
+.thumb.has-image {
+  background-position: center;
 }
 
 .thumb span {
