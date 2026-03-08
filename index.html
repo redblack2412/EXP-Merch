@@ -345,6 +345,7 @@
             <button id="cloud-sync-now" type="button">Jetzt synchronisieren</button>
             <button id="cloud-sync-pull-force" type="button">Cloud-Daten laden</button>
           </div>
+          <p id="cloud-sync-global-hint" class="cart-hint" hidden></p>
           <p class="cart-hint">Nach Aktivierung werden Änderungen auf diesem Gerät automatisch mit der Cloud synchronisiert.</p>
         </form>
         <p id="cloud-sync-feedback" class="cart-hint data-sync-feedback"></p>
@@ -486,8 +487,9 @@
       </li>
     </template>
 
+    <script src="cloud-config.js?v=20260308-01"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=20260308-20"></script>
+    <script src="app.js?v=20260308-21"></script>
     <script>
       (() => {
         const adminButtons = document.querySelectorAll(".open-admin-trigger");

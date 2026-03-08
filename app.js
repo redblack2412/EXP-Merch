@@ -165,6 +165,7 @@ const cloudSyncIdInput = document.querySelector("#cloud-sync-id");
 const cloudSyncNowBtn = document.querySelector("#cloud-sync-now");
 const cloudSyncPullForceBtn = document.querySelector("#cloud-sync-pull-force");
 const cloudSyncFeedback = document.querySelector("#cloud-sync-feedback");
+const cloudSyncGlobalHint = document.querySelector("#cloud-sync-global-hint");
 const capsuleEnabledInput = document.querySelector("#capsule-enabled");
 const capsulePriceInput = document.querySelector("#capsule-price");
 const capsuleForm = document.querySelector("#capsule-form");
@@ -420,6 +421,24 @@ const normalizeCloudConfig = (parsed) => {
   return { enabled, url, anonKey, syncId };
 };
 
+const readGlobalCloudConfig = () => {
+  try {
+    if (typeof window === "undefined") {
+      return normalizeCloudConfig({});
+    }
+    const raw = window.__MERCH_CLOUD_CONFIG__;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      return normalizeCloudConfig({});
+    }
+    return normalizeCloudConfig(raw);
+  } catch {
+    return normalizeCloudConfig({});
+  }
+};
+
+const globalCloudConfig = readGlobalCloudConfig();
+const hasGlobalCloudCredentials = Boolean(globalCloudConfig.url && globalCloudConfig.anonKey && globalCloudConfig.syncId);
+
 const makeDefaultEventForCatalog = (catalog) => ({
   id: "default-event",
   name: "Standard-Verkauf",
@@ -561,15 +580,20 @@ const loadScrapEntries = () => {
 };
 
 const loadCloudConfig = () => {
+  const fallback = hasGlobalCloudCredentials ? { ...globalCloudConfig, enabled: true } : normalizeCloudConfig({});
   try {
     const raw = safeGetItem(STORAGE_CLOUD_CONFIG);
     if (!raw) {
-      return normalizeCloudConfig({});
+      return fallback;
     }
     const parsed = JSON.parse(raw);
-    return normalizeCloudConfig(parsed);
+    const localConfig = normalizeCloudConfig(parsed);
+    if (hasGlobalCloudCredentials) {
+      return { ...globalCloudConfig, enabled: true };
+    }
+    return localConfig;
   } catch {
-    return normalizeCloudConfig({});
+    return fallback;
   }
 };
 
@@ -2701,17 +2725,28 @@ const renderCloudSyncForm = () => {
   if (!cloudSyncForm) {
     return;
   }
+  const isGlobalLocked = hasGlobalCloudCredentials;
   if (cloudSyncEnabledInput) {
     cloudSyncEnabledInput.checked = Boolean(cloudConfig.enabled);
+    cloudSyncEnabledInput.disabled = isGlobalLocked;
   }
   if (cloudSyncUrlInput) {
     cloudSyncUrlInput.value = cloudConfig.url;
+    cloudSyncUrlInput.disabled = isGlobalLocked;
   }
   if (cloudSyncAnonKeyInput) {
     cloudSyncAnonKeyInput.value = cloudConfig.anonKey;
+    cloudSyncAnonKeyInput.disabled = isGlobalLocked;
   }
   if (cloudSyncIdInput) {
     cloudSyncIdInput.value = cloudConfig.syncId;
+    cloudSyncIdInput.disabled = isGlobalLocked;
+  }
+  if (cloudSyncGlobalHint) {
+    cloudSyncGlobalHint.hidden = !isGlobalLocked;
+    cloudSyncGlobalHint.textContent = isGlobalLocked
+      ? "Cloud-Zugang ist global hinterlegt (cloud-config.js). Neue Geräte synchronisieren automatisch."
+      : "";
   }
 };
 

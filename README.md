@@ -90,15 +90,19 @@ with check (true);
 3. In Supabase unter `Settings -> API` kopieren:
    - `Project URL`
    - `anon public key`
-4. In der App: `Admin -> Cloud-Sync (vollautomatisch)`:
+4. Datei [`cloud-config.js`](./cloud-config.js) einmalig ausfüllen:
+   - `url`: deine `Project URL`
+   - `anonKey`: dein `anon public key` / `publishable key`
+   - `syncId`: z. B. `explizit-live`
+5. Änderungen deployen (GitHub Pages).
+6. In der App: `Admin -> Cloud-Sync (vollautomatisch)`:
    - aktivieren
-   - URL + ANON Key eintragen
-   - eine `Sync-ID` festlegen (z. B. `explizit-live`)
-   - speichern
+   - bei globaler Konfiguration sind URL/Key bereits gesetzt
    - bei Bedarf `Cloud-Daten laden`, um den Cloud-Stand lokal zu überschreiben
 
 Hinweis:
 - Mit gleicher `Sync-ID` sehen alle Geräte denselben Datenstand.
+- Wenn `cloud-config.js` im Repo gesetzt ist, synchronisieren neue Geräte beim ersten Aufruf automatisch.
 - Die App arbeitet weiterhin offline; sobald wieder Internet da ist, wird wieder synchronisiert.
 
 ## Schnell veröffentlichen (ein Befehl)
