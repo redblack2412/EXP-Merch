@@ -902,6 +902,22 @@ dialog button {
   margin-top: 0;
 }
 
+.product-image-state {
+  margin: 0;
+  grid-column: 1 / -1;
+}
+
+.product-image-preview {
+  grid-column: 1 / -1;
+  height: 140px;
+  border-radius: 10px;
+  border: 1px solid rgba(242, 239, 0, 0.2);
+  background: linear-gradient(140deg, #1f2733, #111722);
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
 .pin-dialog {
   width: min(420px, 92vw);
 }
@@ -951,6 +967,34 @@ dialog button {
   align-items: center;
   justify-content: space-between;
   gap: 0.7rem;
+}
+
+.admin-product-thumb {
+  width: 72px;
+  height: 72px;
+  border-radius: 10px;
+  border: 1px solid rgba(242, 239, 0, 0.2);
+  background: linear-gradient(140deg, #1f2733, #111722);
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0.25rem;
+}
+
+.admin-product-thumb.has-image {
+  color: transparent;
+}
+
+.admin-product-info {
+  flex: 1;
+  min-width: 0;
 }
 
 .admin-product p {

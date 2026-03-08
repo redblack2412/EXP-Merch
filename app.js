@@ -146,6 +146,8 @@ const brandingForm = document.querySelector("#branding-form");
 const productForm = document.querySelector("#product-form");
 const newProductBtn = document.querySelector("#new-product");
 const adminProducts = document.querySelector("#admin-products");
+const productImageState = document.querySelector("#product-image-state");
+const productImagePreview = document.querySelector("#product-image-preview");
 const inventoryList = document.querySelector("#inventory-list");
 const scrapList = document.querySelector("#scrap-list");
 const pinForm = document.querySelector("#pin-form");
@@ -687,6 +689,7 @@ if (String(sitePassword).trim().length < 4) {
 }
 
 const cart = new Map();
+let productFormPreviewObjectUrl = "";
 const cloudClientId = `client-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 let cloudClient = null;
 let cloudClientIdentity = "";
@@ -1658,21 +1661,61 @@ const parseVariantSpec = (specText, basePrice, existingVariants = []) => {
   return variants;
 };
 
+const clearProductFormPreviewObjectUrl = () => {
+  if (!productFormPreviewObjectUrl) {
+    return;
+  }
+  URL.revokeObjectURL(productFormPreviewObjectUrl);
+  productFormPreviewObjectUrl = "";
+};
+
+const getProductFormExistingImage = () => {
+  if (!productForm) {
+    return "";
+  }
+  const idInForm = String(productForm.elements.productId.value || "").trim();
+  if (!idInForm) {
+    return "";
+  }
+  return products.find((item) => item.id === idInForm)?.image || "";
+};
+
+const setProductFormImagePreview = (rawImage, stateText = "") => {
+  const imageUrl = resolveImageUrl(rawImage);
+  if (productImagePreview) {
+    if (imageUrl) {
+      productImagePreview.hidden = false;
+      productImagePreview.style.backgroundImage = `url("${imageUrl}")`;
+      productImagePreview.classList.add("has-image");
+    } else {
+      productImagePreview.hidden = true;
+      productImagePreview.style.removeProperty("background-image");
+      productImagePreview.classList.remove("has-image");
+    }
+  }
+  if (productImageState) {
+    productImageState.textContent = stateText || (imageUrl ? "Bild hinterlegt." : "Kein Bild hinterlegt.");
+  }
+};
+
 const clearProductForm = () => {
   if (!productForm) {
     return;
   }
+  clearProductFormPreviewObjectUrl();
   productForm.reset();
   productForm.elements.productId.value = "";
   productForm.elements.variants.value = "Standard:0";
   productForm.elements.imageFile.value = "";
   productForm.elements.removeImage.checked = false;
+  setProductFormImagePreview("", "Kein Bild hinterlegt.");
 };
 
 const fillProductForm = (product) => {
   if (!productForm) {
     return;
   }
+  clearProductFormPreviewObjectUrl();
   productForm.elements.productId.value = product.id;
   productForm.elements.name.value = product.name;
   productForm.elements.category.value = product.category;
@@ -1681,6 +1724,7 @@ const fillProductForm = (product) => {
   productForm.elements.removeImage.checked = false;
   productForm.elements.meta.value = product.meta;
   productForm.elements.variants.value = variantsToSpec(product.variants);
+  setProductFormImagePreview(product.image, product.image ? "Aktuell hinterlegtes Bild." : "Kein Bild hinterlegt.");
 };
 
 const renderAdminProducts = () => {
@@ -1696,14 +1740,25 @@ const renderAdminProducts = () => {
       const li = document.createElement("li");
       li.className = "admin-product";
 
+      const thumb = document.createElement("div");
+      thumb.className = "admin-product-thumb";
+      const thumbImage = resolveImageUrl(product.image);
+      if (thumbImage) {
+        thumb.style.backgroundImage = `url("${thumbImage}")`;
+        thumb.classList.add("has-image");
+      } else {
+        thumb.textContent = "Kein Bild";
+      }
+
       const infoWrap = document.createElement("div");
+      infoWrap.className = "admin-product-info";
       const name = document.createElement("div");
       name.className = "name";
       name.textContent = `${product.name} (${formatPrice(product.basePrice)})`;
       const meta = document.createElement("p");
       meta.textContent = `${product.category} • ${product.meta || "-"} • Varianten: ${product.variants
         .map((variant) => `${variant.label}:${variant.stock}`)
-        .join(" | ")}`;
+        .join(" | ")} • Bild: ${thumbImage ? "Ja" : "Nein"}`;
       infoWrap.append(name, meta);
 
       const actions = document.createElement("div");
@@ -1750,7 +1805,7 @@ const renderAdminProducts = () => {
       });
 
       actions.append(editBtn, deleteBtn);
-      li.append(infoWrap, actions);
+      li.append(thumb, infoWrap, actions);
       adminProducts.appendChild(li);
     });
 };
@@ -3673,6 +3728,47 @@ if (brandingForm) {
 }
 
 if (productForm) {
+  const formImageInput = productForm.elements.imageFile;
+  const formRemoveImageInput = productForm.elements.removeImage;
+
+  if (formImageInput) {
+    formImageInput.addEventListener("change", () => {
+      const file = formImageInput.files?.[0] ?? null;
+      if (file) {
+        if (formRemoveImageInput) {
+          formRemoveImageInput.checked = false;
+        }
+        clearProductFormPreviewObjectUrl();
+        productFormPreviewObjectUrl = URL.createObjectURL(file);
+        setProductFormImagePreview(productFormPreviewObjectUrl, `Neues Bild gewählt: ${file.name}`);
+        return;
+      }
+
+      clearProductFormPreviewObjectUrl();
+      if (formRemoveImageInput?.checked) {
+        setProductFormImagePreview("", "Bild wird beim Speichern entfernt.");
+        return;
+      }
+      const existingImage = getProductFormExistingImage();
+      setProductFormImagePreview(existingImage, existingImage ? "Aktuell hinterlegtes Bild." : "Kein Bild hinterlegt.");
+    });
+  }
+
+  if (formRemoveImageInput) {
+    formRemoveImageInput.addEventListener("change", () => {
+      if (formRemoveImageInput.checked) {
+        if (formImageInput) {
+          formImageInput.value = "";
+        }
+        clearProductFormPreviewObjectUrl();
+        setProductFormImagePreview("", "Bild wird beim Speichern entfernt.");
+        return;
+      }
+      const existingImage = getProductFormExistingImage();
+      setProductFormImagePreview(existingImage, existingImage ? "Aktuell hinterlegtes Bild." : "Kein Bild hinterlegt.");
+    });
+  }
+
   productForm.addEventListener("submit", async (event) => {
     event.preventDefault();
 
