@@ -426,24 +426,24 @@ h1 {
   padding: 0.2rem 0.45rem;
 }
 
-.thumb[data-category="Shirts"] {
-  background: linear-gradient(140deg, #2d2f24, #141510);
+.thumb:not(.has-image)[data-category="Shirts"] {
+  background-image: linear-gradient(140deg, #2d2f24, #141510);
 }
 
-.thumb[data-category="Accessoires"] {
-  background: linear-gradient(140deg, #262d38, #101723);
+.thumb:not(.has-image)[data-category="Accessoires"] {
+  background-image: linear-gradient(140deg, #262d38, #101723);
 }
 
-.thumb[data-category="Print"] {
-  background: linear-gradient(140deg, #342f1f, #15120d);
+.thumb:not(.has-image)[data-category="Print"] {
+  background-image: linear-gradient(140deg, #342f1f, #15120d);
 }
 
-.thumb[data-category="Music"] {
-  background: linear-gradient(140deg, #2d212d, #140f17);
+.thumb:not(.has-image)[data-category="Music"] {
+  background-image: linear-gradient(140deg, #2d212d, #140f17);
 }
 
-.thumb[data-category="Bundles"] {
-  background: linear-gradient(140deg, #2d2819, #12100a);
+.thumb:not(.has-image)[data-category="Bundles"] {
+  background-image: linear-gradient(140deg, #2d2819, #12100a);
 }
 
 .product-info {
