@@ -321,6 +321,34 @@
         <input id="data-import-file" type="file" accept="application/json,.json" hidden />
         <p id="data-sync-feedback" class="cart-hint data-sync-feedback"></p>
       </section>
+      <section class="admin-section">
+        <h4>Cloud-Sync (vollautomatisch)</h4>
+        <form id="cloud-sync-form" class="admin-form">
+          <label class="admin-check">
+            <input id="cloud-sync-enabled" type="checkbox" />
+            Cloud-Sync aktivieren
+          </label>
+          <label>
+            Supabase URL
+            <input id="cloud-sync-url" type="url" placeholder="https://dein-projekt.supabase.co" />
+          </label>
+          <label>
+            Supabase ANON Key
+            <input id="cloud-sync-anon-key" type="password" placeholder="eyJ..." />
+          </label>
+          <label>
+            Sync-ID
+            <input id="cloud-sync-id" placeholder="z. B. explizit-live" />
+          </label>
+          <div class="form-actions">
+            <button type="submit">Cloud-Einstellungen speichern</button>
+            <button id="cloud-sync-now" type="button">Jetzt synchronisieren</button>
+            <button id="cloud-sync-pull-force" type="button">Cloud-Daten laden</button>
+          </div>
+          <p class="cart-hint">Nach Aktivierung werden Änderungen auf diesem Gerät automatisch mit der Cloud synchronisiert.</p>
+        </form>
+        <p id="cloud-sync-feedback" class="cart-hint data-sync-feedback"></p>
+      </section>
     </dialog>
 
     <dialog id="dashboard-dialog" class="dashboard-dialog">
@@ -458,7 +486,8 @@
       </li>
     </template>
 
-    <script src="app.js?v=20260307-18"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="app.js?v=20260308-20"></script>
     <script>
       (() => {
         const adminButtons = document.querySelectorAll(".open-admin-trigger");

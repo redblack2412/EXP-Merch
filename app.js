@@ -64,9 +64,13 @@ const STORAGE_ACTIVE_EVENT = "kiosk_active_event_v1";
 const STORAGE_CAPSULE = "kiosk_capsule_v1";
 const STORAGE_SCRAP = "kiosk_scrap_v1";
 const STORAGE_SITE_PASSWORD = "kiosk_site_password_v1";
+const STORAGE_CLOUD_CONFIG = "kiosk_cloud_config_v1";
 const DEFAULT_ADMIN_PIN = "1234";
 const DEFAULT_CAPSULE_PRICE = 2;
 const DEFAULT_SITE_PASSWORD = "1234";
+const DEFAULT_CLOUD_SYNC_ID = "explizit-live";
+const CLOUD_SYNC_TABLE = "merch_sync";
+const CLOUD_SYNC_PULL_INTERVAL_MS = 20000;
 
 const memoryStorage = new Map();
 
@@ -93,6 +97,9 @@ const safeRemoveItem = (key) => {
     memoryStorage.delete(key);
   }
 };
+
+let queueCloudSync = () => {};
+let suppressCloudPush = false;
 
 const categoryNav = document.querySelector("#category-nav");
 const productsGrid = document.querySelector("#products-grid");
@@ -150,6 +157,14 @@ const dataExportBtn = document.querySelector("#data-export");
 const dataImportBtn = document.querySelector("#data-import");
 const dataImportFileInput = document.querySelector("#data-import-file");
 const dataSyncFeedback = document.querySelector("#data-sync-feedback");
+const cloudSyncForm = document.querySelector("#cloud-sync-form");
+const cloudSyncEnabledInput = document.querySelector("#cloud-sync-enabled");
+const cloudSyncUrlInput = document.querySelector("#cloud-sync-url");
+const cloudSyncAnonKeyInput = document.querySelector("#cloud-sync-anon-key");
+const cloudSyncIdInput = document.querySelector("#cloud-sync-id");
+const cloudSyncNowBtn = document.querySelector("#cloud-sync-now");
+const cloudSyncPullForceBtn = document.querySelector("#cloud-sync-pull-force");
+const cloudSyncFeedback = document.querySelector("#cloud-sync-feedback");
 const capsuleEnabledInput = document.querySelector("#capsule-enabled");
 const capsulePriceInput = document.querySelector("#capsule-price");
 const capsuleForm = document.querySelector("#capsule-form");
@@ -396,6 +411,15 @@ const normalizeCapsuleConfigData = (parsed) => {
   return { enabled, price, entries };
 };
 
+const normalizeCloudConfig = (parsed) => {
+  const enabled = Boolean(parsed?.enabled);
+  const url = String(parsed?.url ?? "").trim();
+  const anonKey = String(parsed?.anonKey ?? "").trim();
+  const rawSyncId = String(parsed?.syncId ?? DEFAULT_CLOUD_SYNC_ID).trim();
+  const syncId = slugify(rawSyncId) || DEFAULT_CLOUD_SYNC_ID;
+  return { enabled, url, anonKey, syncId };
+};
+
 const makeDefaultEventForCatalog = (catalog) => ({
   id: "default-event",
   name: "Standard-Verkauf",
@@ -536,22 +560,85 @@ const loadScrapEntries = () => {
   }
 };
 
+const loadCloudConfig = () => {
+  try {
+    const raw = safeGetItem(STORAGE_CLOUD_CONFIG);
+    if (!raw) {
+      return normalizeCloudConfig({});
+    }
+    const parsed = JSON.parse(raw);
+    return normalizeCloudConfig(parsed);
+  } catch {
+    return normalizeCloudConfig({});
+  }
+};
+
+const saveCloudConfig = () => safeSetItem(STORAGE_CLOUD_CONFIG, JSON.stringify(cloudConfig));
+
 const saveProducts = () => {
   safeSetItem(STORAGE_PRODUCTS, JSON.stringify(products));
   safeRemoveItem(STORAGE_PRODUCTS_LEGACY);
+  if (!suppressCloudPush) {
+    queueCloudSync("products");
+  }
 };
 
-const saveBranding = () => safeSetItem(STORAGE_BRANDING, JSON.stringify(branding));
+const saveBranding = () => {
+  safeSetItem(STORAGE_BRANDING, JSON.stringify(branding));
+  if (!suppressCloudPush) {
+    queueCloudSync("branding");
+  }
+};
 const loadAdminPin = () => safeGetItem(STORAGE_ADMIN_PIN) || DEFAULT_ADMIN_PIN;
-const saveAdminPin = (pin) => safeSetItem(STORAGE_ADMIN_PIN, pin);
+const saveAdminPin = (pin) => {
+  safeSetItem(STORAGE_ADMIN_PIN, pin);
+  if (!suppressCloudPush) {
+    queueCloudSync("admin-pin");
+  }
+};
 const loadSitePassword = () => String(safeGetItem(STORAGE_SITE_PASSWORD) || DEFAULT_SITE_PASSWORD).trim();
-const saveSitePassword = (password) => safeSetItem(STORAGE_SITE_PASSWORD, String(password).trim());
-const saveDiscounts = () => safeSetItem(STORAGE_DISCOUNTS, JSON.stringify(discountCodes));
-const saveSales = () => safeSetItem(STORAGE_SALES, JSON.stringify(salesLog));
-const saveEvents = () => safeSetItem(STORAGE_EVENTS, JSON.stringify(events));
-const saveActiveEventId = () => safeSetItem(STORAGE_ACTIVE_EVENT, activeEventId);
-const saveCapsuleConfig = () => safeSetItem(STORAGE_CAPSULE, JSON.stringify(capsuleConfig));
-const saveScrapEntries = () => safeSetItem(STORAGE_SCRAP, JSON.stringify(scrapEntries));
+const saveSitePassword = (password) => {
+  safeSetItem(STORAGE_SITE_PASSWORD, String(password).trim());
+  if (!suppressCloudPush) {
+    queueCloudSync("site-password");
+  }
+};
+const saveDiscounts = () => {
+  safeSetItem(STORAGE_DISCOUNTS, JSON.stringify(discountCodes));
+  if (!suppressCloudPush) {
+    queueCloudSync("discounts");
+  }
+};
+const saveSales = () => {
+  safeSetItem(STORAGE_SALES, JSON.stringify(salesLog));
+  if (!suppressCloudPush) {
+    queueCloudSync("sales");
+  }
+};
+const saveEvents = () => {
+  safeSetItem(STORAGE_EVENTS, JSON.stringify(events));
+  if (!suppressCloudPush) {
+    queueCloudSync("events");
+  }
+};
+const saveActiveEventId = () => {
+  safeSetItem(STORAGE_ACTIVE_EVENT, activeEventId);
+  if (!suppressCloudPush) {
+    queueCloudSync("active-event");
+  }
+};
+const saveCapsuleConfig = () => {
+  safeSetItem(STORAGE_CAPSULE, JSON.stringify(capsuleConfig));
+  if (!suppressCloudPush) {
+    queueCloudSync("capsule");
+  }
+};
+const saveScrapEntries = () => {
+  safeSetItem(STORAGE_SCRAP, JSON.stringify(scrapEntries));
+  if (!suppressCloudPush) {
+    queueCloudSync("scrap");
+  }
+};
 
 let products = loadProducts();
 let branding = loadBranding();
@@ -563,6 +650,7 @@ let events = loadEvents(products);
 let activeEventId = String(safeGetItem(STORAGE_ACTIVE_EVENT) || "");
 let capsuleConfig = loadCapsuleConfig();
 let scrapEntries = loadScrapEntries();
+let cloudConfig = loadCloudConfig();
 let appliedDiscountCode = "";
 let appliedDiscountCustomAmount = 0;
 let categories = [];
@@ -575,6 +663,15 @@ if (String(sitePassword).trim().length < 4) {
 }
 
 const cart = new Map();
+const cloudClientId = `client-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+let cloudClient = null;
+let cloudClientIdentity = "";
+let cloudPullInterval = 0;
+let cloudPushTimeout = 0;
+let cloudPullRunning = false;
+let cloudPushRunning = false;
+let cloudLastRemoteTs = 0;
+let cloudBootstrapDone = false;
 
 const cartKey = (productId, variantId, source = "normal", refId = "") =>
   `${productId}::${variantId}::${source}${refId ? `::${refId}` : ""}`;
@@ -2573,6 +2670,7 @@ const openAdmin = () => {
   clearCapsuleForm();
   clearEventForm();
   clearDiscountForm();
+  renderCloudSyncForm();
   if (sitePasswordForm) {
     sitePasswordForm.reset();
   }
@@ -2589,6 +2687,389 @@ const setDataSyncFeedback = (message, isError = false) => {
   }
   dataSyncFeedback.textContent = String(message || "");
   dataSyncFeedback.classList.toggle("error", isError);
+};
+
+const setCloudSyncFeedback = (message, isError = false) => {
+  if (!cloudSyncFeedback) {
+    return;
+  }
+  cloudSyncFeedback.textContent = String(message || "");
+  cloudSyncFeedback.classList.toggle("error", isError);
+};
+
+const renderCloudSyncForm = () => {
+  if (!cloudSyncForm) {
+    return;
+  }
+  if (cloudSyncEnabledInput) {
+    cloudSyncEnabledInput.checked = Boolean(cloudConfig.enabled);
+  }
+  if (cloudSyncUrlInput) {
+    cloudSyncUrlInput.value = cloudConfig.url;
+  }
+  if (cloudSyncAnonKeyInput) {
+    cloudSyncAnonKeyInput.value = cloudConfig.anonKey;
+  }
+  if (cloudSyncIdInput) {
+    cloudSyncIdInput.value = cloudConfig.syncId;
+  }
+};
+
+const parseCloudConfigFromForm = () =>
+  normalizeCloudConfig({
+    enabled: Boolean(cloudSyncEnabledInput?.checked),
+    url: cloudSyncUrlInput?.value,
+    anonKey: cloudSyncAnonKeyInput?.value,
+    syncId: cloudSyncIdInput?.value
+  });
+
+const canUseCloudSync = () =>
+  Boolean(cloudConfig.enabled && cloudConfig.url && cloudConfig.anonKey && cloudConfig.syncId);
+
+const formatCloudSyncTime = (tsValue) => {
+  const ts = Number(tsValue);
+  if (!Number.isFinite(ts) || ts <= 0) {
+    return "";
+  }
+  try {
+    return new Intl.DateTimeFormat("de-DE", { dateStyle: "short", timeStyle: "medium" }).format(new Date(ts));
+  } catch {
+    return "";
+  }
+};
+
+const stopCloudPullInterval = () => {
+  if (cloudPullInterval) {
+    window.clearInterval(cloudPullInterval);
+    cloudPullInterval = 0;
+  }
+};
+
+const stopCloudPushTimeout = () => {
+  if (cloudPushTimeout) {
+    window.clearTimeout(cloudPushTimeout);
+    cloudPushTimeout = 0;
+  }
+};
+
+const getCloudClient = () => {
+  if (!canUseCloudSync()) {
+    return null;
+  }
+  const createClient = window.supabase?.createClient;
+  if (typeof createClient !== "function") {
+    throw new Error("Supabase-Bibliothek nicht geladen.");
+  }
+  const identity = `${cloudConfig.url}::${cloudConfig.anonKey}`;
+  if (!cloudClient || cloudClientIdentity !== identity) {
+    cloudClient = createClient(cloudConfig.url, cloudConfig.anonKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+        detectSessionInUrl: false
+      }
+    });
+    cloudClientIdentity = identity;
+  }
+  return cloudClient;
+};
+
+const buildAppStatePayload = () => {
+  ensureEventsIntegrity();
+  ensureCapsuleIntegrity();
+  ensureScrapIntegrity();
+  return {
+    products,
+    branding,
+    discounts: discountCodes,
+    discountCodes,
+    salesLog,
+    sales: salesLog,
+    events,
+    activeEventId,
+    capsuleConfig,
+    scrapEntries,
+    adminPin,
+    sitePassword
+  };
+};
+
+const applyAppStatePayload = (appData, { queueCloud = true } = {}) => {
+  const importedProducts = Array.isArray(appData?.products) ? appData.products.map((item) => normalizeProduct(item)) : [];
+  if (importedProducts.length === 0) {
+    throw new Error("Import abgebrochen: Keine gültigen Produkte gefunden.");
+  }
+
+  const previousSuppress = suppressCloudPush;
+  suppressCloudPush = !queueCloud;
+  try {
+    products = importedProducts;
+    branding = normalizeBrandingData(appData.branding);
+    const importedDiscounts = Array.isArray(appData.discounts)
+      ? appData.discounts
+      : Array.isArray(appData.discountCodes)
+        ? appData.discountCodes
+        : [];
+    discountCodes = importedDiscounts
+      .map((item) => normalizeDiscount(item))
+      .filter((item) => item.code && (item.type === "custom" ? item.value >= 0 : item.value > 0));
+    const importedSales = Array.isArray(appData.salesLog)
+      ? appData.salesLog
+      : Array.isArray(appData.sales)
+        ? appData.sales
+        : [];
+    salesLog = importedSales.map((item) => normalizeSale(item)).filter((sale) => sale.items.length > 0);
+    events = Array.isArray(appData.events) && appData.events.length > 0
+      ? appData.events.map((item, index) => normalizeEvent(item, `Veranstaltung ${index + 1}`))
+      : [makeDefaultEventForCatalog(products)];
+    activeEventId = String(appData.activeEventId || "").trim();
+    capsuleConfig = normalizeCapsuleConfigData(appData.capsuleConfig);
+    scrapEntries = Array.isArray(appData.scrapEntries)
+      ? appData.scrapEntries.map((item, index) => normalizeScrapEntry(item, index)).filter((item) => item.qty > 0)
+      : [];
+
+    const importedPin = String(appData.adminPin || "").trim();
+    if (/^[0-9]{4,}$/.test(importedPin)) {
+      adminPin = importedPin;
+    }
+    const importedSitePassword = String(appData.sitePassword || "").trim();
+    if (importedSitePassword.length >= 4) {
+      sitePassword = importedSitePassword;
+    } else {
+      sitePassword = DEFAULT_SITE_PASSWORD;
+    }
+
+    appliedDiscountCode = "";
+    appliedDiscountCustomAmount = 0;
+    if (discountInput) {
+      discountInput.value = "";
+    }
+    if (discountCustomAmountInput) {
+      discountCustomAmountInput.value = "";
+    }
+    if (discountFeedback) {
+      discountFeedback.textContent = "";
+    }
+
+    ensureEventsIntegrity();
+    ensureCapsuleIntegrity();
+    ensureScrapIntegrity();
+    syncCartWithCatalog();
+    rebuildCategories();
+    updateActiveEventLabels();
+
+    saveProducts();
+    saveBranding();
+    saveDiscounts();
+    saveSales();
+    saveEvents();
+    saveActiveEventId();
+    saveCapsuleConfig();
+    saveScrapEntries();
+    saveAdminPin(adminPin);
+    saveSitePassword(sitePassword);
+  } finally {
+    suppressCloudPush = previousSuppress;
+  }
+
+  renderCategories();
+  renderProducts();
+  renderCart();
+  renderVariantDialog();
+  renderAdminProducts();
+  renderInventory();
+  renderScrapList();
+  renderCapsuleList();
+  renderActiveEventSelect();
+  renderEventList();
+  renderDiscountList();
+  clearProductForm();
+  clearCapsuleForm();
+  clearEventForm();
+  clearDiscountForm();
+};
+
+const scheduleCloudPush = () => {
+  if (!canUseCloudSync() || !cloudBootstrapDone || suppressCloudPush) {
+    return;
+  }
+  stopCloudPushTimeout();
+  cloudPushTimeout = window.setTimeout(() => {
+    cloudPushTimeout = 0;
+    void pushCloudState({ silent: true });
+  }, 900);
+};
+
+queueCloudSync = scheduleCloudPush;
+
+const pushCloudState = async ({ silent = false, force = false } = {}) => {
+  if (!canUseCloudSync()) {
+    return false;
+  }
+  if (!force && !cloudBootstrapDone) {
+    return false;
+  }
+  if (cloudPushRunning) {
+    return false;
+  }
+
+  cloudPushRunning = true;
+  try {
+    const client = getCloudClient();
+    if (!client) {
+      return false;
+    }
+    const nowIso = new Date().toISOString();
+    const payload = {
+      schemaVersion: 1,
+      updatedAt: nowIso,
+      updatedBy: cloudClientId,
+      app: buildAppStatePayload()
+    };
+    const { data, error } = await client
+      .from(CLOUD_SYNC_TABLE)
+      .upsert(
+        {
+          id: cloudConfig.syncId,
+          payload,
+          updated_at: nowIso
+        },
+        { onConflict: "id" }
+      )
+      .select("updated_at")
+      .single();
+    if (error) {
+      throw new Error(error.message || "Cloud-Upload fehlgeschlagen.");
+    }
+    const ts = Date.parse(String(data?.updated_at || nowIso));
+    cloudLastRemoteTs = Number.isFinite(ts) ? ts : Date.now();
+    cloudBootstrapDone = true;
+    if (!silent) {
+      const label = formatCloudSyncTime(cloudLastRemoteTs);
+      setCloudSyncFeedback(label ? `Cloud synchronisiert (${label}).` : "Cloud synchronisiert.");
+    }
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Cloud-Upload fehlgeschlagen.";
+    if (!silent) {
+      setCloudSyncFeedback(message, true);
+    }
+    return false;
+  } finally {
+    cloudPushRunning = false;
+  }
+};
+
+const pullCloudState = async ({ silent = false, bootstrapIfMissing = true, forceApply = false } = {}) => {
+  if (!canUseCloudSync()) {
+    return false;
+  }
+  if (cloudPullRunning) {
+    return false;
+  }
+
+  cloudPullRunning = true;
+  try {
+    const client = getCloudClient();
+    if (!client) {
+      return false;
+    }
+    const { data, error } = await client
+      .from(CLOUD_SYNC_TABLE)
+      .select("payload,updated_at")
+      .eq("id", cloudConfig.syncId)
+      .maybeSingle();
+    if (error) {
+      throw new Error(error.message || "Cloud-Download fehlgeschlagen.");
+    }
+
+    if (!data?.payload) {
+      if (bootstrapIfMissing) {
+        const pushed = await pushCloudState({ silent: true, force: true });
+        cloudBootstrapDone = pushed;
+        if (!silent) {
+          setCloudSyncFeedback(
+            pushed ? "Cloud war leer. Lokaler Stand wurde als Startwert hochgeladen." : "Cloud ist leer und konnte nicht initialisiert werden.",
+            !pushed
+          );
+        }
+        return pushed;
+      }
+      return true;
+    }
+
+    const remoteTs = Date.parse(String(data.updated_at || data.payload?.updatedAt || ""));
+    if (!forceApply && Number.isFinite(remoteTs) && remoteTs > 0 && cloudLastRemoteTs > 0 && remoteTs <= cloudLastRemoteTs) {
+      cloudBootstrapDone = true;
+      if (!silent) {
+        const label = formatCloudSyncTime(cloudLastRemoteTs);
+        setCloudSyncFeedback(label ? `Cloud ist aktuell (${label}).` : "Cloud ist aktuell.");
+      }
+      return true;
+    }
+
+    const appData =
+      data.payload?.app && typeof data.payload.app === "object" && !Array.isArray(data.payload.app)
+        ? data.payload.app
+        : data.payload;
+    applyAppStatePayload(appData, { queueCloud: false });
+    cloudLastRemoteTs = Number.isFinite(remoteTs) && remoteTs > 0 ? remoteTs : Date.now();
+    cloudBootstrapDone = true;
+    if (!silent) {
+      const label = formatCloudSyncTime(cloudLastRemoteTs);
+      setCloudSyncFeedback(label ? `Cloud-Daten geladen (${label}).` : "Cloud-Daten geladen.");
+    }
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Cloud-Download fehlgeschlagen.";
+    if (!silent) {
+      setCloudSyncFeedback(message, true);
+    }
+    return false;
+  } finally {
+    cloudPullRunning = false;
+  }
+};
+
+const startCloudPullInterval = () => {
+  stopCloudPullInterval();
+  if (!canUseCloudSync()) {
+    return;
+  }
+  cloudPullInterval = window.setInterval(() => {
+    void pullCloudState({ silent: true, bootstrapIfMissing: false });
+  }, CLOUD_SYNC_PULL_INTERVAL_MS);
+};
+
+const initializeCloudSync = async ({ withStatus = false } = {}) => {
+  stopCloudPullInterval();
+  stopCloudPushTimeout();
+  cloudClient = null;
+  cloudClientIdentity = "";
+  cloudBootstrapDone = false;
+  cloudLastRemoteTs = 0;
+  renderCloudSyncForm();
+
+  if (!cloudConfig.enabled) {
+    if (withStatus) {
+      setCloudSyncFeedback("Cloud-Sync ist deaktiviert.");
+    }
+    return;
+  }
+  if (!cloudConfig.url || !cloudConfig.anonKey) {
+    if (withStatus) {
+      setCloudSyncFeedback("Für Cloud-Sync bitte Supabase URL und ANON Key eintragen.", true);
+    }
+    return;
+  }
+
+  if (withStatus) {
+    setCloudSyncFeedback("Cloud-Sync verbindet...");
+  }
+  const pulled = await pullCloudState({ silent: !withStatus, bootstrapIfMissing: true });
+  if (pulled) {
+    startCloudPullInterval();
+  }
 };
 
 const makeExportFileName = () => {
@@ -2618,26 +3099,10 @@ const downloadJsonFile = (filename, payload) => {
 };
 
 const exportDataBundle = () => {
-  ensureEventsIntegrity();
-  ensureCapsuleIntegrity();
-  ensureScrapIntegrity();
   const payload = {
     schemaVersion: 1,
     exportedAt: new Date().toISOString(),
-    app: {
-      products,
-      branding,
-      discounts: discountCodes,
-      discountCodes,
-      salesLog,
-      sales: salesLog,
-      events,
-      activeEventId,
-      capsuleConfig,
-      scrapEntries,
-      adminPin,
-      sitePassword
-    }
+    app: buildAppStatePayload()
   };
   downloadJsonFile(makeExportFileName(), payload);
   setDataSyncFeedback("Export abgeschlossen.");
@@ -2651,93 +3116,7 @@ const importDataBundle = (rawPayload) => {
 
   const appData =
     payload?.app && typeof payload.app === "object" && !Array.isArray(payload.app) ? payload.app : payload;
-
-  const importedProducts = Array.isArray(appData.products) ? appData.products.map((item) => normalizeProduct(item)) : [];
-  if (importedProducts.length === 0) {
-    throw new Error("Import abgebrochen: Keine gültigen Produkte gefunden.");
-  }
-
-  products = importedProducts;
-  branding = normalizeBrandingData(appData.branding);
-  const importedDiscounts = Array.isArray(appData.discounts)
-    ? appData.discounts
-    : Array.isArray(appData.discountCodes)
-      ? appData.discountCodes
-      : [];
-  discountCodes = importedDiscounts
-        .map((item) => normalizeDiscount(item))
-        .filter((item) => item.code && (item.type === "custom" ? item.value >= 0 : item.value > 0));
-  const importedSales = Array.isArray(appData.salesLog)
-    ? appData.salesLog
-    : Array.isArray(appData.sales)
-      ? appData.sales
-      : [];
-  salesLog = importedSales.map((item) => normalizeSale(item)).filter((sale) => sale.items.length > 0);
-  events = Array.isArray(appData.events) && appData.events.length > 0
-    ? appData.events.map((item, index) => normalizeEvent(item, `Veranstaltung ${index + 1}`))
-    : [makeDefaultEventForCatalog(products)];
-  activeEventId = String(appData.activeEventId || "").trim();
-  capsuleConfig = normalizeCapsuleConfigData(appData.capsuleConfig);
-  scrapEntries = Array.isArray(appData.scrapEntries)
-    ? appData.scrapEntries.map((item, index) => normalizeScrapEntry(item, index)).filter((item) => item.qty > 0)
-    : [];
-
-  const importedPin = String(appData.adminPin || "").trim();
-  if (/^[0-9]{4,}$/.test(importedPin)) {
-    adminPin = importedPin;
-  }
-  const importedSitePassword = String(appData.sitePassword || "").trim();
-  if (importedSitePassword.length >= 4) {
-    sitePassword = importedSitePassword;
-  } else {
-    sitePassword = DEFAULT_SITE_PASSWORD;
-  }
-
-  appliedDiscountCode = "";
-  appliedDiscountCustomAmount = 0;
-  if (discountInput) {
-    discountInput.value = "";
-  }
-  if (discountCustomAmountInput) {
-    discountCustomAmountInput.value = "";
-  }
-  if (discountFeedback) {
-    discountFeedback.textContent = "";
-  }
-
-  ensureEventsIntegrity();
-  ensureCapsuleIntegrity();
-  ensureScrapIntegrity();
-  syncCartWithCatalog();
-  rebuildCategories();
-  updateActiveEventLabels();
-
-  saveProducts();
-  saveBranding();
-  saveDiscounts();
-  saveSales();
-  saveEvents();
-  saveActiveEventId();
-  saveCapsuleConfig();
-  saveScrapEntries();
-  saveAdminPin(adminPin);
-  saveSitePassword(sitePassword);
-
-  renderCategories();
-  renderProducts();
-  renderCart();
-  renderVariantDialog();
-  renderAdminProducts();
-  renderInventory();
-  renderScrapList();
-  renderCapsuleList();
-  renderActiveEventSelect();
-  renderEventList();
-  renderDiscountList();
-  clearProductForm();
-  clearCapsuleForm();
-  clearEventForm();
-  clearDiscountForm();
+  applyAppStatePayload(appData, { queueCloud: true });
 };
 
 const applyAccessPassword = () => {
@@ -3020,6 +3399,70 @@ if (dataImportFileInput) {
       const message = error instanceof Error ? error.message : "Import fehlgeschlagen.";
       setDataSyncFeedback(message, true);
     }
+  });
+}
+
+if (cloudSyncForm) {
+  cloudSyncForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const nextConfig = parseCloudConfigFromForm();
+    cloudConfig = nextConfig;
+    saveCloudConfig();
+    renderCloudSyncForm();
+
+    if (!cloudConfig.enabled) {
+      stopCloudPullInterval();
+      stopCloudPushTimeout();
+      cloudBootstrapDone = false;
+      setCloudSyncFeedback("Cloud-Sync deaktiviert.");
+      return;
+    }
+
+    if (!cloudConfig.url || !cloudConfig.anonKey) {
+      setCloudSyncFeedback("Bitte Supabase URL und ANON Key eingeben.", true);
+      return;
+    }
+
+    await initializeCloudSync({ withStatus: true });
+  });
+}
+
+if (cloudSyncNowBtn) {
+  cloudSyncNowBtn.addEventListener("click", async () => {
+    if (!canUseCloudSync()) {
+      setCloudSyncFeedback("Cloud-Sync ist nicht vollständig konfiguriert.", true);
+      return;
+    }
+    setCloudSyncFeedback("Synchronisierung läuft...");
+    const pulled = await pullCloudState({ silent: true, bootstrapIfMissing: true });
+    if (!pulled) {
+      setCloudSyncFeedback("Cloud-Download fehlgeschlagen.", true);
+      return;
+    }
+    const pushed = await pushCloudState({ silent: true, force: true });
+    if (!pushed) {
+      setCloudSyncFeedback("Cloud-Upload fehlgeschlagen.", true);
+      return;
+    }
+    const label = formatCloudSyncTime(cloudLastRemoteTs);
+    setCloudSyncFeedback(label ? `Synchronisiert (${label}).` : "Synchronisiert.");
+  });
+}
+
+if (cloudSyncPullForceBtn) {
+  cloudSyncPullForceBtn.addEventListener("click", async () => {
+    if (!canUseCloudSync()) {
+      setCloudSyncFeedback("Cloud-Sync ist nicht vollständig konfiguriert.", true);
+      return;
+    }
+    setCloudSyncFeedback("Cloud-Daten werden geladen...");
+    const pulled = await pullCloudState({ silent: true, bootstrapIfMissing: false, forceApply: true });
+    if (!pulled) {
+      setCloudSyncFeedback("Cloud-Download fehlgeschlagen.", true);
+      return;
+    }
+    const label = formatCloudSyncTime(cloudLastRemoteTs);
+    setCloudSyncFeedback(label ? `Cloud-Stand übernommen (${label}).` : "Cloud-Stand übernommen.");
   });
 }
 
@@ -3447,3 +3890,4 @@ renderCart();
 renderVariantDialog();
 showHomeView();
 lockSiteAccess();
+void initializeCloudSync({ withStatus: false });
