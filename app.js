@@ -1067,10 +1067,11 @@ const renderProducts = () => {
     if (thumb) {
       const imageUrl = resolveImageUrl(product.image);
       if (imageUrl) {
-        thumb.style.backgroundImage =
-          `linear-gradient(to top, rgba(8, 10, 16, 0.9), rgba(8, 10, 16, 0.2)), url("${imageUrl}")`;
+        thumb.style.backgroundImage = `url("${imageUrl}")`;
+        thumb.classList.add("has-image");
       } else {
         thumb.style.removeProperty("background-image");
+        thumb.classList.remove("has-image");
       }
       thumb.dataset.category = product.category;
     }
