@@ -379,7 +379,7 @@ h1 {
 }
 
 .thumb {
-  aspect-ratio: 16/10;
+  aspect-ratio: 4/3;
   display: flex;
   align-items: end;
   padding: 0.65rem;
@@ -405,14 +405,15 @@ h1 {
 }
 
 .thumb.has-image::before {
-  background: linear-gradient(to top, rgba(8, 10, 16, 0.22), rgba(8, 10, 16, 0.02));
+  background: transparent;
 }
 
 .thumb.has-image {
+  padding: 0.35rem;
   background-size: contain;
   background-position: center;
   background-repeat: no-repeat;
-  background-color: #0d131d;
+  background-color: #eef2f7;
 }
 
 .thumb span {
