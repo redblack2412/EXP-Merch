@@ -1074,8 +1074,26 @@ dialog button {
 .variant-options {
   margin-top: 0.85rem;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  grid-template-columns: 1fr;
   gap: 0.6rem;
+}
+
+.variant-step-label {
+  margin: 0.1rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.variant-size-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 0.55rem;
+}
+
+.variant-actions-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.55rem;
 }
 
 .variant-btn {
@@ -1087,6 +1105,16 @@ dialog button {
   padding: 0.6rem 0.65rem;
   text-align: left;
   cursor: pointer;
+}
+
+.variant-btn.size-select {
+  min-height: 76px;
+}
+
+.variant-btn.size-select.is-selected {
+  border-color: rgba(242, 239, 0, 0.86);
+  box-shadow: inset 0 0 0 1px rgba(242, 239, 0, 0.45);
+  background: linear-gradient(160deg, rgba(242, 239, 0, 0.16), rgba(15, 21, 31, 0.96));
 }
 
 .variant-btn strong {

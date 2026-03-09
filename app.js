@@ -682,6 +682,7 @@ let appliedDiscountCustomAmount = 0;
 let categories = [];
 let activeCategory = "Alle";
 let selectedProductId = "";
+let selectedVariantId = "";
 
 if (String(sitePassword).trim().length < 4) {
   sitePassword = DEFAULT_SITE_PASSWORD;
@@ -1005,6 +1006,7 @@ const showHomeView = () => {
   if (orderView) {
     orderView.classList.add("hidden");
   }
+  selectedVariantId = "";
   closeDialog(variantDialog);
 };
 
@@ -1085,6 +1087,7 @@ const renderProducts = () => {
     if (available > 0) {
       card.addEventListener("click", () => {
         selectedProductId = product.id;
+        selectedVariantId = "";
         renderVariantDialog();
         openDialog(variantDialog);
       });
@@ -1094,6 +1097,7 @@ const renderProducts = () => {
         }
         event.preventDefault();
         selectedProductId = product.id;
+        selectedVariantId = "";
         renderVariantDialog();
         openDialog(variantDialog);
       });
@@ -1355,83 +1359,126 @@ const renderVariantDialog = () => {
   }
 
   variantTitle.textContent = product.name;
-  variantSubtitle.textContent = `${product.category} • ${product.meta || ""}`;
+  const variantIds = new Set(product.variants.map((variant) => variant.id));
+  if (!variantIds.has(selectedVariantId)) {
+    selectedVariantId = product.variants.find((variant) => remainingStock(product.id, variant.id) > 0)?.id || product.variants[0]?.id || "";
+  }
+
+  const activeVariant = getVariantById(product, selectedVariantId) || product.variants[0];
+  const activeStock = activeVariant ? remainingStock(product.id, activeVariant.id) : 0;
+  variantSubtitle.textContent = `${product.category} • ${product.meta || ""} • Größe: ${activeVariant?.label || "-"}`;
   variantOptions.replaceChildren();
 
+  const sizeLabel = document.createElement("p");
+  sizeLabel.className = "variant-step-label";
+  sizeLabel.textContent = "1) Größe wählen";
+  variantOptions.appendChild(sizeLabel);
+
+  const sizeGrid = document.createElement("div");
+  sizeGrid.className = "variant-size-grid";
   product.variants.forEach((variant) => {
     const left = remainingStock(product.id, variant.id);
-    const normalBtn = document.createElement("button");
-    normalBtn.type = "button";
-    normalBtn.className = "variant-btn";
-    normalBtn.disabled = left <= 0;
-    normalBtn.innerHTML = `<strong>${variant.label} • ${formatPrice(variant.price)}</strong><span>Verfügbar: ${left}</span>`;
-
-    normalBtn.addEventListener("click", () => {
-      const added = addToCart(product.id, variant.id);
-      if (added) {
-        closeDialog(variantDialog);
-        renderCart();
-        renderProducts();
-      }
-    });
-    variantOptions.appendChild(normalBtn);
-
-    const freeBtn = document.createElement("button");
-    freeBtn.type = "button";
-    freeBtn.className = "variant-btn free-mode";
-    freeBtn.disabled = left <= 0;
-    freeBtn.innerHTML = `<strong>${variant.label} • Gratis</strong><span>Verfügbar: ${left}</span>`;
-    freeBtn.addEventListener("click", () => {
-      const added = addToCart(product.id, variant.id, { source: "free" });
-      if (added) {
-        closeDialog(variantDialog);
-        renderCart();
-        renderProducts();
-      }
-    });
-    variantOptions.appendChild(freeBtn);
-
-    const scrapBtn = document.createElement("button");
-    scrapBtn.type = "button";
-    scrapBtn.className = "variant-btn scrap-mode";
-    scrapBtn.disabled = left <= 0;
-    scrapBtn.innerHTML = `<strong>${variant.label} • Ausschuss</strong><span>Bestand -1 • Verfügbar: ${left}</span>`;
-    scrapBtn.addEventListener("click", () => {
-      const marked = declareScrap(product.id, variant.id, 1);
-      if (!marked) {
-        renderVariantDialog();
-      }
-    });
-    variantOptions.appendChild(scrapBtn);
-
-    const hasCapsuleConfig = capsuleConfig.entries.some(
-      (entry) => entry.productId === product.id && entry.variantId === variant.id
-    );
-    if (!capsuleConfig.enabled || !hasCapsuleConfig) {
-      return;
+    const sizeBtn = document.createElement("button");
+    sizeBtn.type = "button";
+    sizeBtn.className = "variant-btn size-select";
+    if (variant.id === selectedVariantId) {
+      sizeBtn.classList.add("is-selected");
     }
+    sizeBtn.disabled = left <= 0;
+    sizeBtn.innerHTML = `<strong>${variant.label}</strong><span>Verfügbar: ${left}</span>`;
+    sizeBtn.addEventListener("click", () => {
+      selectedVariantId = variant.id;
+      renderVariantDialog();
+    });
+    sizeGrid.appendChild(sizeBtn);
+  });
+  variantOptions.appendChild(sizeGrid);
 
-    const capsuleLeft = getCapsuleRemainingForVariant(product.id, variant.id);
+  if (!activeVariant) {
+    return;
+  }
+
+  const actionLabel = document.createElement("p");
+  actionLabel.className = "variant-step-label";
+  actionLabel.textContent = "2) Aktion wählen";
+  variantOptions.appendChild(actionLabel);
+
+  const actionGrid = document.createElement("div");
+  actionGrid.className = "variant-actions-grid";
+
+  const normalBtn = document.createElement("button");
+  normalBtn.type = "button";
+  normalBtn.className = "variant-btn";
+  normalBtn.disabled = activeStock <= 0;
+  normalBtn.innerHTML = `<strong>Normal verkaufen • ${formatPrice(activeVariant.price)}</strong><span>Größe ${activeVariant.label} • Verfügbar: ${activeStock}</span>`;
+  normalBtn.addEventListener("click", () => {
+    const added = addToCart(product.id, activeVariant.id);
+    if (added) {
+      selectedVariantId = "";
+      closeDialog(variantDialog);
+      renderCart();
+      renderProducts();
+    }
+  });
+  actionGrid.appendChild(normalBtn);
+
+  const freeBtn = document.createElement("button");
+  freeBtn.type = "button";
+  freeBtn.className = "variant-btn free-mode";
+  freeBtn.disabled = activeStock <= 0;
+  freeBtn.innerHTML = `<strong>Gratis</strong><span>Größe ${activeVariant.label} • Verfügbar: ${activeStock}</span>`;
+  freeBtn.addEventListener("click", () => {
+    const added = addToCart(product.id, activeVariant.id, { source: "free" });
+    if (added) {
+      selectedVariantId = "";
+      closeDialog(variantDialog);
+      renderCart();
+      renderProducts();
+    }
+  });
+  actionGrid.appendChild(freeBtn);
+
+  const scrapBtn = document.createElement("button");
+  scrapBtn.type = "button";
+  scrapBtn.className = "variant-btn scrap-mode";
+  scrapBtn.disabled = activeStock <= 0;
+  scrapBtn.innerHTML = `<strong>Ausschuss</strong><span>Größe ${activeVariant.label} • Bestand -1 • Verfügbar: ${activeStock}</span>`;
+  scrapBtn.addEventListener("click", () => {
+    const marked = declareScrap(product.id, activeVariant.id, 1);
+    if (!marked) {
+      renderVariantDialog();
+    }
+  });
+  actionGrid.appendChild(scrapBtn);
+
+  const hasCapsuleConfig = capsuleConfig.entries.some(
+    (entry) => entry.productId === product.id && entry.variantId === activeVariant.id
+  );
+  if (capsuleConfig.enabled && hasCapsuleConfig) {
+    const capsuleLeft = getCapsuleRemainingForVariant(product.id, activeVariant.id);
     const capsuleBtn = document.createElement("button");
     capsuleBtn.type = "button";
     capsuleBtn.className = "variant-btn capsule-mode";
-    capsuleBtn.disabled = capsuleLeft <= 0 || left <= 0;
-    capsuleBtn.innerHTML = `<strong>${variant.label} • Kugelautomat ${formatPrice(capsuleConfig.price)}</strong><span>Im Automaten: ${capsuleLeft}</span>`;
+    capsuleBtn.disabled = capsuleLeft <= 0 || activeStock <= 0;
+    capsuleBtn.innerHTML = `<strong>Kugelautomat • ${formatPrice(capsuleConfig.price)}</strong><span>Größe ${activeVariant.label} • Im Automaten: ${capsuleLeft}</span>`;
     capsuleBtn.addEventListener("click", () => {
-      const entry = pickCapsuleEntryForVariant(product.id, variant.id);
+      const entry = pickCapsuleEntryForVariant(product.id, activeVariant.id);
       if (!entry) {
         renderVariantDialog();
         return;
       }
-      const added = addToCart(product.id, variant.id, { source: "capsule", capsuleEntryId: entry.id });
+      const added = addToCart(product.id, activeVariant.id, { source: "capsule", capsuleEntryId: entry.id });
       if (added) {
+        selectedVariantId = "";
         closeDialog(variantDialog);
         renderCart();
         renderProducts();
       }
     });
-    variantOptions.appendChild(capsuleBtn);
-  });
+    actionGrid.appendChild(capsuleBtn);
+  }
+
+  variantOptions.appendChild(actionGrid);
 };
 
 const syncCartWithCatalog = () => {
@@ -3394,7 +3441,16 @@ if (closeDialogBtn) {
 }
 
 if (closeVariantBtn) {
-  closeVariantBtn.addEventListener("click", () => closeDialog(variantDialog));
+  closeVariantBtn.addEventListener("click", () => {
+    selectedVariantId = "";
+    closeDialog(variantDialog);
+  });
+}
+
+if (variantDialog) {
+  variantDialog.addEventListener("close", () => {
+    selectedVariantId = "";
+  });
 }
 
 if (openOrderBtn) {
