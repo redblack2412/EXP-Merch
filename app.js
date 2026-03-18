@@ -62,15 +62,19 @@ const STORAGE_SALES = "kiosk_sales_v1";
 const STORAGE_EVENTS = "kiosk_events_v1";
 const STORAGE_ACTIVE_EVENT = "kiosk_active_event_v1";
 const STORAGE_CAPSULE = "kiosk_capsule_v1";
+const STORAGE_JACKPOT = "kiosk_jackpot_v1";
 const STORAGE_SCRAP = "kiosk_scrap_v1";
 const STORAGE_SITE_PASSWORD = "kiosk_site_password_v1";
 const STORAGE_CLOUD_CONFIG = "kiosk_cloud_config_v1";
 const DEFAULT_ADMIN_PIN = "1234";
 const DEFAULT_CAPSULE_PRICE = 2;
+const DEFAULT_JACKPOT_PRICE = 5;
 const DEFAULT_SITE_PASSWORD = "1234";
+const DEFAULT_JACKPOT_NAME = "Jackpot";
 const DEFAULT_CLOUD_SYNC_ID = "explizit-live";
 const CLOUD_SYNC_TABLE = "merch_sync";
 const CLOUD_SYNC_PULL_INTERVAL_MS = 20000;
+const JACKPOT_PRODUCT_ID = "__jackpot__";
 
 const memoryStorage = new Map();
 
@@ -173,6 +177,12 @@ const capsulePriceInput = document.querySelector("#capsule-price");
 const capsuleForm = document.querySelector("#capsule-form");
 const newCapsuleEntryBtn = document.querySelector("#new-capsule-entry");
 const capsuleList = document.querySelector("#capsule-list");
+const jackpotEnabledInput = document.querySelector("#jackpot-enabled");
+const jackpotNameInput = document.querySelector("#jackpot-name");
+const jackpotPriceInput = document.querySelector("#jackpot-price");
+const jackpotForm = document.querySelector("#jackpot-form");
+const newJackpotEntryBtn = document.querySelector("#new-jackpot-entry");
+const jackpotList = document.querySelector("#jackpot-list");
 const eventForm = document.querySelector("#event-form");
 const newEventBtn = document.querySelector("#new-event");
 const eventList = document.querySelector("#event-list");
@@ -414,6 +424,21 @@ const normalizeCapsuleConfigData = (parsed) => {
   return { enabled, price, entries };
 };
 
+const normalizeJackpotEntry = (item, index = 0) => ({
+  id: String(item?.id ?? `jackpot-${index + 1}`),
+  productId: String(item?.productId ?? "").trim(),
+  variantId: String(item?.variantId ?? "").trim()
+});
+
+const normalizeJackpotConfigData = (parsed) => {
+  const enabled = Boolean(parsed?.enabled);
+  const name = String(parsed?.name ?? DEFAULT_JACKPOT_NAME).trim() || DEFAULT_JACKPOT_NAME;
+  const rawPrice = Number(parsed?.price ?? DEFAULT_JACKPOT_PRICE);
+  const price = Number.isFinite(rawPrice) && rawPrice >= 0 ? rawPrice : DEFAULT_JACKPOT_PRICE;
+  const entries = Array.isArray(parsed?.entries) ? parsed.entries.map((item, index) => normalizeJackpotEntry(item, index)) : [];
+  return { enabled, name, price, entries };
+};
+
 const normalizeCloudConfig = (parsed) => {
   const enabled = Boolean(parsed?.enabled);
   const url = String(parsed?.url ?? "").trim();
@@ -565,6 +590,19 @@ const loadCapsuleConfig = () => {
   }
 };
 
+const loadJackpotConfig = () => {
+  const fallback = { enabled: false, name: DEFAULT_JACKPOT_NAME, price: DEFAULT_JACKPOT_PRICE, entries: [] };
+  try {
+    const raw = safeGetItem(STORAGE_JACKPOT);
+    if (!raw) {
+      return fallback;
+    }
+    return normalizeJackpotConfigData(JSON.parse(raw));
+  } catch {
+    return fallback;
+  }
+};
+
 const loadScrapEntries = () => {
   try {
     const raw = safeGetItem(STORAGE_SCRAP);
@@ -659,6 +697,12 @@ const saveCapsuleConfig = () => {
     queueCloudSync("capsule");
   }
 };
+const saveJackpotConfig = () => {
+  safeSetItem(STORAGE_JACKPOT, JSON.stringify(jackpotConfig));
+  if (!suppressCloudPush) {
+    queueCloudSync("jackpot");
+  }
+};
 const saveScrapEntries = () => {
   safeSetItem(STORAGE_SCRAP, JSON.stringify(scrapEntries));
   if (!suppressCloudPush) {
@@ -675,6 +719,7 @@ let salesLog = loadSales();
 let events = loadEvents(products);
 let activeEventId = String(safeGetItem(STORAGE_ACTIVE_EVENT) || "");
 let capsuleConfig = loadCapsuleConfig();
+let jackpotConfig = loadJackpotConfig();
 let scrapEntries = loadScrapEntries();
 let cloudConfig = loadCloudConfig();
 let appliedDiscountCode = "";
@@ -683,6 +728,7 @@ let categories = [];
 let activeCategory = "Alle";
 let selectedProductId = "";
 let selectedVariantId = "";
+let selectedJackpotEntryId = "";
 
 if (String(sitePassword).trim().length < 4) {
   sitePassword = DEFAULT_SITE_PASSWORD;
@@ -846,6 +892,62 @@ const ensureCapsuleIntegrity = () => {
     saveCapsuleConfig();
   }
 };
+
+const getJackpotEntryById = (entryId) => jackpotConfig.entries.find((entry) => entry.id === entryId);
+const getJackpotEntryRows = ({ onlyActiveEvent = true, onlyAvailable = true } = {}) =>
+  jackpotConfig.entries
+    .map((rawEntry, index) => {
+      const entry = normalizeJackpotEntry(rawEntry, index);
+      const product = getProductById(entry.productId);
+      const variant = getVariantById(product, entry.variantId);
+      if (!product || !variant) {
+        return null;
+      }
+      if (onlyActiveEvent && !isProductAllowedForActiveEvent(product.id)) {
+        return null;
+      }
+      const left = remainingStock(product.id, variant.id);
+      if (onlyAvailable && left <= 0) {
+        return null;
+      }
+      return { entry, product, variant, left };
+    })
+    .filter(Boolean);
+const getJackpotAvailableTotal = () => getJackpotEntryRows().reduce((sum, row) => sum + row.left, 0);
+const isJackpotTileVisible = () => jackpotConfig.enabled && getJackpotEntryRows().length > 0;
+const ensureJackpotIntegrity = () => {
+  const before = JSON.stringify(jackpotConfig);
+  const name = String(jackpotConfig.name || DEFAULT_JACKPOT_NAME).trim() || DEFAULT_JACKPOT_NAME;
+  const rawPrice = Number(jackpotConfig.price ?? DEFAULT_JACKPOT_PRICE);
+  const price = Number.isFinite(rawPrice) && rawPrice >= 0 ? Math.round(rawPrice * 100) / 100 : DEFAULT_JACKPOT_PRICE;
+  const entries = [];
+  const seenIds = new Set();
+  (jackpotConfig.entries || []).forEach((rawEntry, index) => {
+    const entry = normalizeJackpotEntry(rawEntry, index);
+    const product = getProductById(entry.productId);
+    const variant = getVariantById(product, entry.variantId);
+    if (!product || !variant) {
+      return;
+    }
+    let nextId = entry.id || `jackpot-${index + 1}`;
+    let bump = 2;
+    while (seenIds.has(nextId)) {
+      nextId = `${entry.id || "jackpot"}-${bump}`;
+      bump += 1;
+    }
+    seenIds.add(nextId);
+    entries.push({ ...entry, id: nextId });
+  });
+  jackpotConfig = {
+    enabled: Boolean(jackpotConfig.enabled),
+    name,
+    price,
+    entries
+  };
+  if (JSON.stringify(jackpotConfig) !== before) {
+    saveJackpotConfig();
+  }
+};
 const makeScrapEntryId = (productId, variantId) => `scrap-${slugify(productId)}-${slugify(variantId)}`;
 const ensureScrapIntegrity = () => {
   const before = JSON.stringify(scrapEntries);
@@ -928,7 +1030,11 @@ const sellableProducts = () =>
   products.filter((product) => isProductAllowedForActiveEvent(product.id) && isSellableProduct(product));
 
 const rebuildCategories = () => {
-  categories = ["Alle", ...new Set(sellableProducts().map((product) => product.category))];
+  const base = ["Alle", ...new Set(sellableProducts().map((product) => product.category))];
+  if (isJackpotTileVisible() && !base.includes("Jackpot")) {
+    base.push("Jackpot");
+  }
+  categories = base;
   if (!categories.includes(activeCategory)) {
     activeCategory = "Alle";
   }
@@ -956,6 +1062,9 @@ const applyBranding = () => {
 
 const visibleProducts = () => {
   const available = sellableProducts();
+  if (activeCategory === "Jackpot") {
+    return [];
+  }
   return activeCategory === "Alle"
     ? available
     : available.filter((product) => product.category === activeCategory);
@@ -1007,12 +1116,14 @@ const showHomeView = () => {
     orderView.classList.add("hidden");
   }
   selectedVariantId = "";
+  selectedJackpotEntryId = "";
   closeDialog(variantDialog);
 };
 
 const showOrderView = () => {
   ensureEventsIntegrity();
   ensureCapsuleIntegrity();
+  ensureJackpotIntegrity();
   updateActiveEventLabels();
   if (homeView) {
     homeView.classList.add("hidden");
@@ -1053,9 +1164,10 @@ const renderProducts = () => {
 
   productsGrid.replaceChildren();
   const toShow = visibleProducts();
+  const showJackpot = isJackpotTileVisible() && (activeCategory === "Alle" || activeCategory === "Jackpot");
 
   if (catalogEmpty) {
-    catalogEmpty.hidden = toShow.length > 0;
+    catalogEmpty.hidden = toShow.length > 0 || showJackpot;
   }
 
   toShow.forEach((product) => {
@@ -1088,6 +1200,7 @@ const renderProducts = () => {
       card.addEventListener("click", () => {
         selectedProductId = product.id;
         selectedVariantId = "";
+        selectedJackpotEntryId = "";
         renderVariantDialog();
         openDialog(variantDialog);
       });
@@ -1098,6 +1211,7 @@ const renderProducts = () => {
         event.preventDefault();
         selectedProductId = product.id;
         selectedVariantId = "";
+        selectedJackpotEntryId = "";
         renderVariantDialog();
         openDialog(variantDialog);
       });
@@ -1105,18 +1219,65 @@ const renderProducts = () => {
 
     productsGrid.appendChild(card);
   });
+
+  if (!showJackpot) {
+    return;
+  }
+
+  const jackpotCard = productCardTemplate.content.firstElementChild.cloneNode(true);
+  const jackpotThumb = jackpotCard.querySelector(".thumb");
+  const jackpotTitle = jackpotCard.querySelector("h3");
+  const jackpotAvailable = getJackpotAvailableTotal();
+
+  if (jackpotTitle) {
+    jackpotTitle.textContent = jackpotConfig.name || DEFAULT_JACKPOT_NAME;
+  }
+  if (jackpotThumb) {
+    jackpotThumb.style.removeProperty("background-image");
+    jackpotThumb.classList.remove("has-image");
+    jackpotThumb.dataset.category = "Jackpot";
+  }
+
+  jackpotCard.setAttribute("role", "button");
+  jackpotCard.tabIndex = jackpotAvailable > 0 ? 0 : -1;
+  jackpotCard.classList.toggle("is-disabled", jackpotAvailable <= 0);
+  if (jackpotAvailable > 0) {
+    const openJackpot = () => {
+      selectedProductId = JACKPOT_PRODUCT_ID;
+      selectedVariantId = "";
+      selectedJackpotEntryId = "";
+      renderVariantDialog();
+      openDialog(variantDialog);
+    };
+    jackpotCard.addEventListener("click", openJackpot);
+    jackpotCard.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") {
+        return;
+      }
+      event.preventDefault();
+      openJackpot();
+    });
+  }
+  productsGrid.appendChild(jackpotCard);
 };
 
 const addToCart = (productId, variantId, options = {}) => {
   const product = getProductById(productId);
   const variant = getVariantById(product, variantId);
-  const source = options.source === "capsule" ? "capsule" : options.source === "free" ? "free" : "normal";
+  const source =
+    options.source === "capsule"
+      ? "capsule"
+      : options.source === "free"
+        ? "free"
+        : options.source === "jackpot"
+          ? "jackpot"
+          : "normal";
 
   if (!product || !variant) {
     return false;
   }
 
-  if ((source === "normal" || source === "free") && !isProductAllowedForActiveEvent(productId)) {
+  if ((source === "normal" || source === "free" || source === "jackpot") && !isProductAllowedForActiveEvent(productId)) {
     return false;
   }
 
@@ -1125,6 +1286,7 @@ const addToCart = (productId, variantId, options = {}) => {
   }
 
   let capsuleEntryId = "";
+  let jackpotEntryId = "";
   let price = variant.price;
   let displayName = product.name;
   if (source === "capsule") {
@@ -1141,12 +1303,28 @@ const addToCart = (productId, variantId, options = {}) => {
     capsuleEntryId = entry.id;
     price = capsuleConfig.price;
     displayName = `${product.name} [Automat]`;
+  } else if (source === "jackpot") {
+    if (!jackpotConfig.enabled) {
+      return false;
+    }
+    const jackpotEntry = getJackpotEntryById(String(options.jackpotEntryId || ""));
+    if (!jackpotEntry || jackpotEntry.productId !== productId || jackpotEntry.variantId !== variantId) {
+      return false;
+    }
+    jackpotEntryId = jackpotEntry.id;
+    price = jackpotConfig.price;
+    displayName = `${jackpotConfig.name}: ${product.name}`;
   } else if (source === "free") {
     price = 0;
     displayName = `${product.name} [Gratis]`;
   }
 
-  const key = cartKey(productId, variantId, source, source === "capsule" ? capsuleEntryId : "");
+  const key = cartKey(
+    productId,
+    variantId,
+    source,
+    source === "capsule" ? capsuleEntryId : source === "jackpot" ? jackpotEntryId : ""
+  );
   const existing = cart.get(key);
 
   if (existing) {
@@ -1162,7 +1340,8 @@ const addToCart = (productId, variantId, options = {}) => {
       price,
       qty: 1,
       source,
-      capsuleEntryId
+      capsuleEntryId,
+      jackpotEntryId
     });
   }
 
@@ -1212,6 +1391,7 @@ const declareScrap = (productId, variantId, qty = 1) => {
   renderAdminProducts();
   renderInventory();
   renderCapsuleList();
+  renderJackpotList();
   renderScrapList();
   return true;
 };
@@ -1225,6 +1405,12 @@ const changeQty = (key, delta) => {
   if (delta > 0) {
     if (line.source === "capsule") {
       return;
+    }
+    if (line.source === "jackpot") {
+      const entry = getJackpotEntryById(line.jackpotEntryId);
+      if (!entry || entry.productId !== line.productId || entry.variantId !== line.variantId) {
+        return;
+      }
     }
     if (remainingStock(line.productId, line.variantId) <= 0) {
       return;
@@ -1263,8 +1449,15 @@ const renderCart = () => {
       line.querySelector(".cart-name").textContent = `${item.name} (${item.variantLabel})`;
       const cartPriceEl = line.querySelector(".cart-price");
       if (cartPriceEl) {
-        cartPriceEl.textContent = item.source === "free" ? "Gratis" : `${formatPrice(item.price)} pro Stück`;
+        if (item.source === "free") {
+          cartPriceEl.textContent = "Gratis";
+        } else if (item.source === "jackpot") {
+          cartPriceEl.textContent = `${formatPrice(item.price)} Jackpotpreis`;
+        } else {
+          cartPriceEl.textContent = `${formatPrice(item.price)} pro Stück`;
+        }
         cartPriceEl.classList.toggle("capsule", item.source === "capsule");
+        cartPriceEl.classList.toggle("jackpot", item.source === "jackpot");
         cartPriceEl.classList.toggle("free", item.source === "free");
       }
       line.querySelector(".qty").textContent = item.qty;
@@ -1347,6 +1540,76 @@ const renderCart = () => {
 
 const renderVariantDialog = () => {
   if (!variantDialog || !variantTitle || !variantSubtitle || !variantOptions) {
+    return;
+  }
+
+  if (selectedProductId === JACKPOT_PRODUCT_ID) {
+    const jackpotRows = getJackpotEntryRows();
+    variantTitle.textContent = jackpotConfig.name || DEFAULT_JACKPOT_NAME;
+    variantSubtitle.textContent = `${formatPrice(jackpotConfig.price)} • Jackpot-Artikel auswählen`;
+    variantOptions.replaceChildren();
+
+    if (jackpotRows.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "cart-hint";
+      empty.textContent = "Aktuell keine Jackpot-Artikel verfügbar.";
+      variantOptions.appendChild(empty);
+      return;
+    }
+
+    if (!jackpotRows.some((row) => row.entry.id === selectedJackpotEntryId)) {
+      selectedJackpotEntryId = jackpotRows[0]?.entry.id || "";
+    }
+
+    const label = document.createElement("p");
+    label.className = "variant-step-label";
+    label.textContent = "Jackpot-Artikel wählen";
+    variantOptions.appendChild(label);
+
+    const jackpotGrid = document.createElement("div");
+    jackpotGrid.className = "variant-size-grid";
+    jackpotRows.forEach((row) => {
+      const optionBtn = document.createElement("button");
+      optionBtn.type = "button";
+      optionBtn.className = "variant-btn size-select";
+      if (row.entry.id === selectedJackpotEntryId) {
+        optionBtn.classList.add("is-selected");
+      }
+      optionBtn.innerHTML = `<strong>${row.product.name} (${row.variant.label})</strong><span>Verfügbar: ${row.left}</span>`;
+      optionBtn.addEventListener("click", () => {
+        selectedJackpotEntryId = row.entry.id;
+        renderVariantDialog();
+      });
+      jackpotGrid.appendChild(optionBtn);
+    });
+    variantOptions.appendChild(jackpotGrid);
+
+    const selectedRow = jackpotRows.find((row) => row.entry.id === selectedJackpotEntryId) || jackpotRows[0];
+    const actionGrid = document.createElement("div");
+    actionGrid.className = "variant-actions-grid";
+    const addBtn = document.createElement("button");
+    addBtn.type = "button";
+    addBtn.className = "variant-btn jackpot-mode";
+    addBtn.disabled = !selectedRow || selectedRow.left <= 0;
+    addBtn.innerHTML = `<strong>In Warenkorb • ${formatPrice(jackpotConfig.price)}</strong><span>${selectedRow ? `Artikel: ${selectedRow.product.name} (${selectedRow.variant.label})` : "Kein Artikel gewählt"}</span>`;
+    addBtn.addEventListener("click", () => {
+      if (!selectedRow) {
+        return;
+      }
+      const added = addToCart(selectedRow.product.id, selectedRow.variant.id, {
+        source: "jackpot",
+        jackpotEntryId: selectedRow.entry.id
+      });
+      if (added) {
+        selectedJackpotEntryId = "";
+        selectedVariantId = "";
+        closeDialog(variantDialog);
+        renderCart();
+        renderProducts();
+      }
+    });
+    actionGrid.appendChild(addBtn);
+    variantOptions.appendChild(actionGrid);
     return;
   }
 
@@ -1490,11 +1753,17 @@ const syncCartWithCatalog = () => {
     if (!product || !variant) {
       return;
     }
-    if ((line.source === "normal" || line.source === "free") && !isProductAllowedForActiveEvent(line.productId)) {
+    if ((line.source === "normal" || line.source === "free" || line.source === "jackpot") && !isProductAllowedForActiveEvent(line.productId)) {
       return;
     }
     if (line.source === "capsule") {
       const entry = getCapsuleEntryById(line.capsuleEntryId);
+      if (!entry || entry.productId !== line.productId || entry.variantId !== line.variantId) {
+        return;
+      }
+    }
+    if (line.source === "jackpot") {
+      const entry = getJackpotEntryById(line.jackpotEntryId);
       if (!entry || entry.productId !== line.productId || entry.variantId !== line.variantId) {
         return;
       }
@@ -1512,18 +1781,32 @@ const syncCartWithCatalog = () => {
       return;
     }
 
-    const source = line.source === "capsule" ? "capsule" : line.source === "free" ? "free" : "normal";
-    const key = cartKey(line.productId, line.variantId, source, source === "capsule" ? line.capsuleEntryId : "");
+    const source =
+      line.source === "capsule" ? "capsule" : line.source === "free" ? "free" : line.source === "jackpot" ? "jackpot" : "normal";
+    const key = cartKey(
+      line.productId,
+      line.variantId,
+      source,
+      source === "capsule" ? line.capsuleEntryId : source === "jackpot" ? line.jackpotEntryId : ""
+    );
     cleaned.set(key, {
       key,
       productId: line.productId,
       variantId: line.variantId,
-      name: source === "capsule" ? `${product.name} [Automat]` : source === "free" ? `${product.name} [Gratis]` : product.name,
+      name:
+        source === "capsule"
+          ? `${product.name} [Automat]`
+          : source === "free"
+            ? `${product.name} [Gratis]`
+            : source === "jackpot"
+              ? `${jackpotConfig.name}: ${product.name}`
+              : product.name,
       variantLabel: variant.label,
-      price: source === "capsule" ? capsuleConfig.price : source === "free" ? 0 : variant.price,
+      price: source === "capsule" ? capsuleConfig.price : source === "free" ? 0 : source === "jackpot" ? jackpotConfig.price : variant.price,
       qty,
       source,
-      capsuleEntryId: source === "capsule" ? line.capsuleEntryId : ""
+      capsuleEntryId: source === "capsule" ? line.capsuleEntryId : "",
+      jackpotEntryId: source === "jackpot" ? line.jackpotEntryId : ""
     });
   });
 
@@ -1545,7 +1828,7 @@ const checkout = () => {
       missing.push(`${line.name} (${line.variantLabel}) nicht mehr vorhanden`);
       return;
     }
-    if ((line.source === "normal" || line.source === "free") && !isProductAllowedForActiveEvent(line.productId)) {
+    if ((line.source === "normal" || line.source === "free" || line.source === "jackpot") && !isProductAllowedForActiveEvent(line.productId)) {
       missing.push(`${line.name} ist nicht für diese Veranstaltung freigegeben`);
       return;
     }
@@ -1557,6 +1840,13 @@ const checkout = () => {
       }
       if (entry.qty < line.qty) {
         missing.push(`${line.name} nur noch ${entry.qty}x im Automaten`);
+        return;
+      }
+    }
+    if (line.source === "jackpot") {
+      const entry = getJackpotEntryById(line.jackpotEntryId);
+      if (!entry || entry.productId !== line.productId || entry.variantId !== line.variantId) {
+        missing.push(`${line.name} nicht mehr als Jackpot verfügbar`);
         return;
       }
     }
@@ -1638,6 +1928,8 @@ const checkout = () => {
   renderCart();
   renderAdminProducts();
   renderInventory();
+  renderCapsuleList();
+  renderJackpotList();
 
   if (discountValue > 0 && getActiveDiscount()) {
     checkoutText.textContent = `Verkauf abgeschlossen: ${soldCount} Artikel. Zwischensumme ${formatPrice(
@@ -1834,6 +2126,7 @@ const renderAdminProducts = () => {
         saveProducts();
         ensureEventsIntegrity();
         ensureCapsuleIntegrity();
+        ensureJackpotIntegrity();
         ensureScrapIntegrity();
         syncCartWithCatalog();
         rebuildCategories();
@@ -1844,9 +2137,11 @@ const renderAdminProducts = () => {
         renderInventory();
         renderScrapList();
         renderCapsuleList();
+        renderJackpotList();
         renderActiveEventSelect();
         renderEventList();
         clearCapsuleForm();
+        clearJackpotForm();
         clearEventForm();
         clearProductForm();
       });
@@ -1907,6 +2202,8 @@ const renderInventory = () => {
           renderCart();
           renderInventory();
           renderAdminProducts();
+          renderCapsuleList();
+          renderJackpotList();
           renderVariantDialog();
         });
 
@@ -1982,6 +2279,7 @@ const renderScrapList = () => {
         renderAdminProducts();
         renderInventory();
         renderCapsuleList();
+        renderJackpotList();
         renderScrapList();
       });
 
@@ -2123,6 +2421,140 @@ const renderCapsuleList = () => {
       actions.append(editBtn, deleteBtn);
       li.append(info, actions);
       capsuleList.appendChild(li);
+    });
+};
+
+const makeUniqueJackpotEntryId = () => {
+  let idx = jackpotConfig.entries.length + 1;
+  let candidate = `jackpot-${idx}`;
+  while (jackpotConfig.entries.some((entry) => entry.id === candidate)) {
+    idx += 1;
+    candidate = `jackpot-${idx}`;
+  }
+  return candidate;
+};
+
+const fillJackpotProductSelect = (keepProductId = "") => {
+  if (!jackpotForm) {
+    return;
+  }
+  const productSelect = jackpotForm.elements.productId;
+  productSelect.replaceChildren();
+  const sorted = products.slice().sort((a, b) => a.name.localeCompare(b.name, "de"));
+  sorted.forEach((product) => {
+    const option = document.createElement("option");
+    option.value = product.id;
+    option.textContent = product.name;
+    productSelect.appendChild(option);
+  });
+  if (sorted.length === 0) {
+    return;
+  }
+  const next = sorted.some((product) => product.id === keepProductId) ? keepProductId : sorted[0].id;
+  productSelect.value = next;
+};
+
+const fillJackpotVariantSelect = (productId, keepVariantId = "") => {
+  if (!jackpotForm) {
+    return;
+  }
+  const variantSelect = jackpotForm.elements.variantId;
+  variantSelect.replaceChildren();
+  const product = getProductById(productId);
+  if (!product) {
+    return;
+  }
+  product.variants.forEach((variant) => {
+    const option = document.createElement("option");
+    option.value = variant.id;
+    option.textContent = `${variant.label} • Bestand ${variant.stock}`;
+    variantSelect.appendChild(option);
+  });
+  const next = product.variants.some((variant) => variant.id === keepVariantId) ? keepVariantId : product.variants[0]?.id || "";
+  variantSelect.value = next;
+};
+
+const clearJackpotForm = () => {
+  if (!jackpotForm) {
+    return;
+  }
+  jackpotForm.reset();
+  jackpotForm.elements.entryId.value = "";
+  fillJackpotProductSelect();
+  fillJackpotVariantSelect(String(jackpotForm.elements.productId.value || ""));
+};
+
+const fillJackpotForm = (entry) => {
+  if (!jackpotForm) {
+    return;
+  }
+  jackpotForm.elements.entryId.value = entry.id;
+  fillJackpotProductSelect(entry.productId);
+  fillJackpotVariantSelect(entry.productId, entry.variantId);
+};
+
+const renderJackpotList = () => {
+  if (!jackpotList) {
+    return;
+  }
+  jackpotList.replaceChildren();
+
+  if (jackpotConfig.entries.length === 0) {
+    const empty = document.createElement("li");
+    empty.className = "admin-product";
+    empty.textContent = "Keine Jackpot-Artikel hinterlegt.";
+    jackpotList.appendChild(empty);
+    return;
+  }
+
+  jackpotConfig.entries
+    .slice()
+    .sort((a, b) => {
+      const pa = getProductById(a.productId)?.name || a.productId;
+      const pb = getProductById(b.productId)?.name || b.productId;
+      return pa.localeCompare(pb, "de");
+    })
+    .forEach((entry) => {
+      const product = getProductById(entry.productId);
+      const variant = getVariantById(product, entry.variantId);
+      const li = document.createElement("li");
+      li.className = "admin-product";
+
+      const info = document.createElement("div");
+      const name = document.createElement("div");
+      name.className = "name";
+      name.textContent = product && variant ? `${product.name} (${variant.label})` : "Ungültiger Eintrag";
+      const meta = document.createElement("p");
+      meta.textContent = product && variant ? `Verfügbar im Bestand: ${remainingStock(product.id, variant.id)}` : "Bitte Eintrag prüfen";
+      info.append(name, meta);
+
+      const actions = document.createElement("div");
+      actions.className = "admin-actions";
+
+      const editBtn = document.createElement("button");
+      editBtn.type = "button";
+      editBtn.textContent = "Bearbeiten";
+      editBtn.addEventListener("click", () => fillJackpotForm(entry));
+
+      const deleteBtn = document.createElement("button");
+      deleteBtn.type = "button";
+      deleteBtn.textContent = "Löschen";
+      deleteBtn.addEventListener("click", () => {
+        jackpotConfig.entries = jackpotConfig.entries.filter((item) => item.id !== entry.id);
+        saveJackpotConfig();
+        syncCartWithCatalog();
+        rebuildCategories();
+        renderCategories();
+        renderProducts();
+        renderCart();
+        renderVariantDialog();
+        renderJackpotList();
+        clearJackpotForm();
+      });
+
+      actions.append(editBtn, deleteBtn);
+      li.append(info, actions);
+      jackpotList.appendChild(li);
     });
 };
 
@@ -2778,6 +3210,7 @@ const openAdmin = () => {
   applyBranding();
   ensureEventsIntegrity();
   ensureCapsuleIntegrity();
+  ensureJackpotIntegrity();
   ensureScrapIntegrity();
   updateActiveEventLabels();
   renderAdminProducts();
@@ -2790,11 +3223,22 @@ const openAdmin = () => {
     capsulePriceInput.value = capsuleConfig.price.toFixed(2);
   }
   renderCapsuleList();
+  if (jackpotEnabledInput) {
+    jackpotEnabledInput.checked = Boolean(jackpotConfig.enabled);
+  }
+  if (jackpotNameInput) {
+    jackpotNameInput.value = jackpotConfig.name;
+  }
+  if (jackpotPriceInput) {
+    jackpotPriceInput.value = jackpotConfig.price.toFixed(2);
+  }
+  renderJackpotList();
   renderActiveEventSelect();
   renderEventList();
   renderDiscountList();
   clearProductForm();
   clearCapsuleForm();
+  clearJackpotForm();
   clearEventForm();
   clearDiscountForm();
   renderCloudSyncForm();
@@ -2915,6 +3359,7 @@ const getCloudClient = () => {
 const buildAppStatePayload = () => {
   ensureEventsIntegrity();
   ensureCapsuleIntegrity();
+  ensureJackpotIntegrity();
   ensureScrapIntegrity();
   return {
     products,
@@ -2926,6 +3371,7 @@ const buildAppStatePayload = () => {
     events,
     activeEventId,
     capsuleConfig,
+    jackpotConfig,
     scrapEntries,
     adminPin,
     sitePassword
@@ -2962,6 +3408,7 @@ const applyAppStatePayload = (appData, { queueCloud = true } = {}) => {
       : [makeDefaultEventForCatalog(products)];
     activeEventId = String(appData.activeEventId || "").trim();
     capsuleConfig = normalizeCapsuleConfigData(appData.capsuleConfig);
+    jackpotConfig = normalizeJackpotConfigData(appData.jackpotConfig);
     scrapEntries = Array.isArray(appData.scrapEntries)
       ? appData.scrapEntries.map((item, index) => normalizeScrapEntry(item, index)).filter((item) => item.qty > 0)
       : [];
@@ -2991,6 +3438,7 @@ const applyAppStatePayload = (appData, { queueCloud = true } = {}) => {
 
     ensureEventsIntegrity();
     ensureCapsuleIntegrity();
+    ensureJackpotIntegrity();
     ensureScrapIntegrity();
     syncCartWithCatalog();
     rebuildCategories();
@@ -3003,6 +3451,7 @@ const applyAppStatePayload = (appData, { queueCloud = true } = {}) => {
     saveEvents();
     saveActiveEventId();
     saveCapsuleConfig();
+    saveJackpotConfig();
     saveScrapEntries();
     saveAdminPin(adminPin);
     saveSitePassword(sitePassword);
@@ -3018,11 +3467,13 @@ const applyAppStatePayload = (appData, { queueCloud = true } = {}) => {
   renderInventory();
   renderScrapList();
   renderCapsuleList();
+  renderJackpotList();
   renderActiveEventSelect();
   renderEventList();
   renderDiscountList();
   clearProductForm();
   clearCapsuleForm();
+  clearJackpotForm();
   clearEventForm();
   clearDiscountForm();
 };
@@ -3443,6 +3894,7 @@ if (closeDialogBtn) {
 if (closeVariantBtn) {
   closeVariantBtn.addEventListener("click", () => {
     selectedVariantId = "";
+    selectedJackpotEntryId = "";
     closeDialog(variantDialog);
   });
 }
@@ -3450,6 +3902,7 @@ if (closeVariantBtn) {
 if (variantDialog) {
   variantDialog.addEventListener("close", () => {
     selectedVariantId = "";
+    selectedJackpotEntryId = "";
   });
 }
 
@@ -3686,11 +4139,126 @@ if (capsuleForm) {
     }
 
     ensureCapsuleIntegrity();
+    saveCapsuleConfig();
     syncCartWithCatalog();
     renderCart();
     renderCapsuleList();
     renderVariantDialog();
     clearCapsuleForm();
+  });
+}
+
+if (jackpotEnabledInput) {
+  jackpotEnabledInput.addEventListener("change", () => {
+    jackpotConfig.enabled = Boolean(jackpotEnabledInput.checked);
+    ensureJackpotIntegrity();
+    saveJackpotConfig();
+    syncCartWithCatalog();
+    rebuildCategories();
+    renderCategories();
+    renderProducts();
+    renderCart();
+    renderVariantDialog();
+  });
+}
+
+if (jackpotNameInput) {
+  jackpotNameInput.addEventListener("change", () => {
+    const nextName = String(jackpotNameInput.value || "").trim() || DEFAULT_JACKPOT_NAME;
+    jackpotConfig.name = nextName;
+    ensureJackpotIntegrity();
+    saveJackpotConfig();
+    syncCartWithCatalog();
+    rebuildCategories();
+    renderCategories();
+    renderProducts();
+    renderCart();
+    renderVariantDialog();
+    jackpotNameInput.value = jackpotConfig.name;
+  });
+}
+
+if (jackpotPriceInput) {
+  jackpotPriceInput.addEventListener("change", () => {
+    const normalizedValue = String(jackpotPriceInput.value || "")
+      .trim()
+      .replace(",", ".");
+    const raw = Number(normalizedValue);
+    if (!Number.isFinite(raw) || raw < 0) {
+      jackpotPriceInput.value = jackpotConfig.price.toFixed(2);
+      return;
+    }
+    jackpotConfig.price = Math.round(raw * 100) / 100;
+    ensureJackpotIntegrity();
+    saveJackpotConfig();
+    syncCartWithCatalog();
+    renderCart();
+    renderVariantDialog();
+    jackpotPriceInput.value = jackpotConfig.price.toFixed(2);
+  });
+}
+
+if (jackpotForm) {
+  jackpotForm.elements.productId.addEventListener("change", () => {
+    fillJackpotVariantSelect(String(jackpotForm.elements.productId.value || ""));
+  });
+}
+
+if (newJackpotEntryBtn) {
+  newJackpotEntryBtn.addEventListener("click", clearJackpotForm);
+}
+
+if (jackpotForm) {
+  jackpotForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const idInForm = String(jackpotForm.elements.entryId.value || "").trim();
+    const productId = String(jackpotForm.elements.productId.value || "").trim();
+    const variantId = String(jackpotForm.elements.variantId.value || "").trim();
+
+    if (!productId || !variantId) {
+      return;
+    }
+
+    const product = getProductById(productId);
+    const variant = getVariantById(product, variantId);
+    if (!product || !variant) {
+      window.alert("Bitte gültigen Artikel und Variante auswählen.");
+      return;
+    }
+
+    const duplicate = jackpotConfig.entries.find(
+      (entry) => entry.productId === productId && entry.variantId === variantId && entry.id !== idInForm
+    );
+    if (duplicate) {
+      window.alert("Dieser Jackpot-Artikel ist bereits hinterlegt.");
+      return;
+    }
+
+    if (idInForm) {
+      const existing = jackpotConfig.entries.find((entry) => entry.id === idInForm);
+      if (!existing) {
+        return;
+      }
+      existing.productId = productId;
+      existing.variantId = variantId;
+    } else {
+      jackpotConfig.entries.push({
+        id: makeUniqueJackpotEntryId(),
+        productId,
+        variantId
+      });
+    }
+
+    ensureJackpotIntegrity();
+    saveJackpotConfig();
+    syncCartWithCatalog();
+    rebuildCategories();
+    renderCategories();
+    renderProducts();
+    renderCart();
+    renderJackpotList();
+    renderVariantDialog();
+    clearJackpotForm();
   });
 }
 
@@ -3919,6 +4487,7 @@ if (productForm) {
     saveProducts();
     ensureEventsIntegrity();
     ensureCapsuleIntegrity();
+    ensureJackpotIntegrity();
     ensureScrapIntegrity();
     rebuildCategories();
     syncCartWithCatalog();
@@ -3929,10 +4498,12 @@ if (productForm) {
     renderInventory();
     renderScrapList();
     renderCapsuleList();
+    renderJackpotList();
     renderActiveEventSelect();
     renderEventList();
     renderEventProductPicks(getEventFormSelection());
     clearCapsuleForm();
+    clearJackpotForm();
     clearProductForm();
     if (submitButton) {
       submitButton.disabled = false;
@@ -4068,6 +4639,7 @@ if (sitePasswordForm) {
 
 ensureEventsIntegrity();
 ensureCapsuleIntegrity();
+ensureJackpotIntegrity();
 ensureScrapIntegrity();
 updateActiveEventLabels();
 rebuildCategories();

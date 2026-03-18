@@ -446,6 +446,10 @@ h1 {
   background-image: linear-gradient(140deg, #2d2819, #12100a);
 }
 
+.thumb:not(.has-image)[data-category="Jackpot"] {
+  background-image: linear-gradient(140deg, #342714, #151006);
+}
+
 .product-info {
   padding: 0.8rem;
   min-height: 72px;
@@ -540,6 +544,10 @@ dialog button {
 
 .cart-price.capsule {
   color: #eef1bc;
+}
+
+.cart-price.jackpot {
+  color: #ffb86b;
 }
 
 .cart-price.free {
@@ -1129,6 +1137,11 @@ dialog button {
 .variant-btn.capsule-mode {
   border-color: rgba(242, 239, 0, 0.65);
   background: linear-gradient(160deg, rgba(242, 239, 0, 0.12), rgba(15, 21, 31, 0.96));
+}
+
+.variant-btn.jackpot-mode {
+  border-color: rgba(255, 184, 107, 0.72);
+  background: linear-gradient(160deg, rgba(255, 184, 107, 0.2), rgba(15, 21, 31, 0.96));
 }
 
 .variant-btn.free-mode {
