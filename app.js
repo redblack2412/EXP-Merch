@@ -426,8 +426,7 @@ const normalizeCapsuleConfigData = (parsed) => {
 
 const normalizeJackpotEntry = (item, index = 0) => ({
   id: String(item?.id ?? `jackpot-${index + 1}`),
-  productId: String(item?.productId ?? "").trim(),
-  variantId: String(item?.variantId ?? "").trim()
+  productId: String(item?.productId ?? "").trim()
 });
 
 const normalizeJackpotConfigData = (parsed) => {
@@ -894,39 +893,38 @@ const ensureCapsuleIntegrity = () => {
 };
 
 const getJackpotEntryById = (entryId) => jackpotConfig.entries.find((entry) => entry.id === entryId);
-const getJackpotEntryRows = ({ onlyActiveEvent = true, onlyAvailable = true } = {}) =>
+const getJackpotProductRows = ({ onlyActiveEvent = true, onlyAvailable = true } = {}) =>
   jackpotConfig.entries
     .map((rawEntry, index) => {
       const entry = normalizeJackpotEntry(rawEntry, index);
       const product = getProductById(entry.productId);
-      const variant = getVariantById(product, entry.variantId);
-      if (!product || !variant) {
+      if (!product) {
         return null;
       }
       if (onlyActiveEvent && !isProductAllowedForActiveEvent(product.id)) {
         return null;
       }
-      const left = remainingStock(product.id, variant.id);
+      const left = product.variants.reduce((sum, variant) => sum + remainingStock(product.id, variant.id), 0);
       if (onlyAvailable && left <= 0) {
         return null;
       }
-      return { entry, product, variant, left };
+      return { entry, product, left };
     })
     .filter(Boolean);
-const getJackpotAvailableTotal = () => getJackpotEntryRows().reduce((sum, row) => sum + row.left, 0);
-const isJackpotTileVisible = () => jackpotConfig.enabled && getJackpotEntryRows().length > 0;
+const getJackpotAvailableTotal = () => getJackpotProductRows().reduce((sum, row) => sum + row.left, 0);
+const isJackpotTileVisible = () => jackpotConfig.enabled && getJackpotProductRows().length > 0;
 const ensureJackpotIntegrity = () => {
   const before = JSON.stringify(jackpotConfig);
   const name = String(jackpotConfig.name || DEFAULT_JACKPOT_NAME).trim() || DEFAULT_JACKPOT_NAME;
   const rawPrice = Number(jackpotConfig.price ?? DEFAULT_JACKPOT_PRICE);
   const price = Number.isFinite(rawPrice) && rawPrice >= 0 ? Math.round(rawPrice * 100) / 100 : DEFAULT_JACKPOT_PRICE;
   const entries = [];
+  const seenProductIds = new Set();
   const seenIds = new Set();
   (jackpotConfig.entries || []).forEach((rawEntry, index) => {
     const entry = normalizeJackpotEntry(rawEntry, index);
     const product = getProductById(entry.productId);
-    const variant = getVariantById(product, entry.variantId);
-    if (!product || !variant) {
+    if (!product || seenProductIds.has(product.id)) {
       return;
     }
     let nextId = entry.id || `jackpot-${index + 1}`;
@@ -936,6 +934,7 @@ const ensureJackpotIntegrity = () => {
       bump += 1;
     }
     seenIds.add(nextId);
+    seenProductIds.add(product.id);
     entries.push({ ...entry, id: nextId });
   });
   jackpotConfig = {
@@ -1308,7 +1307,7 @@ const addToCart = (productId, variantId, options = {}) => {
       return false;
     }
     const jackpotEntry = getJackpotEntryById(String(options.jackpotEntryId || ""));
-    if (!jackpotEntry || jackpotEntry.productId !== productId || jackpotEntry.variantId !== variantId) {
+    if (!jackpotEntry || jackpotEntry.productId !== productId) {
       return false;
     }
     jackpotEntryId = jackpotEntry.id;
@@ -1408,7 +1407,7 @@ const changeQty = (key, delta) => {
     }
     if (line.source === "jackpot") {
       const entry = getJackpotEntryById(line.jackpotEntryId);
-      if (!entry || entry.productId !== line.productId || entry.variantId !== line.variantId) {
+      if (!entry || entry.productId !== line.productId) {
         return;
       }
     }
@@ -1544,9 +1543,9 @@ const renderVariantDialog = () => {
   }
 
   if (selectedProductId === JACKPOT_PRODUCT_ID) {
-    const jackpotRows = getJackpotEntryRows();
+    const jackpotRows = getJackpotProductRows();
     variantTitle.textContent = jackpotConfig.name || DEFAULT_JACKPOT_NAME;
-    variantSubtitle.textContent = `${formatPrice(jackpotConfig.price)} • Jackpot-Artikel auswählen`;
+    variantSubtitle.textContent = `${formatPrice(jackpotConfig.price)} • Artikel und Größe auswählen`;
     variantOptions.replaceChildren();
 
     if (jackpotRows.length === 0) {
@@ -1563,7 +1562,7 @@ const renderVariantDialog = () => {
 
     const label = document.createElement("p");
     label.className = "variant-step-label";
-    label.textContent = "Jackpot-Artikel wählen";
+    label.textContent = "1) Jackpot-Artikel wählen";
     variantOptions.appendChild(label);
 
     const jackpotGrid = document.createElement("div");
@@ -1575,9 +1574,10 @@ const renderVariantDialog = () => {
       if (row.entry.id === selectedJackpotEntryId) {
         optionBtn.classList.add("is-selected");
       }
-      optionBtn.innerHTML = `<strong>${row.product.name} (${row.variant.label})</strong><span>Verfügbar: ${row.left}</span>`;
+      optionBtn.innerHTML = `<strong>${row.product.name}</strong><span>Verfügbar gesamt: ${row.left}</span>`;
       optionBtn.addEventListener("click", () => {
         selectedJackpotEntryId = row.entry.id;
+        selectedVariantId = "";
         renderVariantDialog();
       });
       jackpotGrid.appendChild(optionBtn);
@@ -1585,18 +1585,65 @@ const renderVariantDialog = () => {
     variantOptions.appendChild(jackpotGrid);
 
     const selectedRow = jackpotRows.find((row) => row.entry.id === selectedJackpotEntryId) || jackpotRows[0];
+    if (!selectedRow) {
+      return;
+    }
+
+    const sizeRows = selectedRow.product.variants.map((variant) => ({
+      variant,
+      left: remainingStock(selectedRow.product.id, variant.id)
+    }));
+    if (!sizeRows.some((row) => row.variant.id === selectedVariantId && row.left > 0)) {
+      selectedVariantId = sizeRows.find((row) => row.left > 0)?.variant.id || "";
+    }
+    const selectedSizeRow = sizeRows.find((row) => row.variant.id === selectedVariantId && row.left > 0) || null;
+
+    const sizeLabel = document.createElement("p");
+    sizeLabel.className = "variant-step-label";
+    sizeLabel.textContent = "2) Größe wählen";
+    variantOptions.appendChild(sizeLabel);
+
+    const sizeGrid = document.createElement("div");
+    sizeGrid.className = "variant-size-grid";
+    sizeRows.forEach((row) => {
+      const sizeBtn = document.createElement("button");
+      sizeBtn.type = "button";
+      sizeBtn.className = "variant-btn size-select";
+      if (row.variant.id === selectedVariantId) {
+        sizeBtn.classList.add("is-selected");
+      }
+      sizeBtn.disabled = row.left <= 0;
+      sizeBtn.innerHTML = `<strong>${row.variant.label}</strong><span>Verfügbar: ${row.left}</span>`;
+      sizeBtn.addEventListener("click", () => {
+        selectedVariantId = row.variant.id;
+        renderVariantDialog();
+      });
+      sizeGrid.appendChild(sizeBtn);
+    });
+    variantOptions.appendChild(sizeGrid);
+
+    if (!selectedSizeRow) {
+      const out = document.createElement("p");
+      out.className = "cart-hint";
+      out.textContent = "Für diesen Jackpot-Artikel ist aktuell keine Größe verfügbar.";
+      variantOptions.appendChild(out);
+      return;
+    }
+
+    const actionLabel = document.createElement("p");
+    actionLabel.className = "variant-step-label";
+    actionLabel.textContent = "3) Aktion wählen";
+    variantOptions.appendChild(actionLabel);
+
     const actionGrid = document.createElement("div");
     actionGrid.className = "variant-actions-grid";
     const addBtn = document.createElement("button");
     addBtn.type = "button";
     addBtn.className = "variant-btn jackpot-mode";
-    addBtn.disabled = !selectedRow || selectedRow.left <= 0;
-    addBtn.innerHTML = `<strong>In Warenkorb • ${formatPrice(jackpotConfig.price)}</strong><span>${selectedRow ? `Artikel: ${selectedRow.product.name} (${selectedRow.variant.label})` : "Kein Artikel gewählt"}</span>`;
+    addBtn.disabled = selectedSizeRow.left <= 0;
+    addBtn.innerHTML = `<strong>In Warenkorb • ${formatPrice(jackpotConfig.price)}</strong><span>Artikel: ${selectedRow.product.name} (${selectedSizeRow.variant.label})</span>`;
     addBtn.addEventListener("click", () => {
-      if (!selectedRow) {
-        return;
-      }
-      const added = addToCart(selectedRow.product.id, selectedRow.variant.id, {
+      const added = addToCart(selectedRow.product.id, selectedSizeRow.variant.id, {
         source: "jackpot",
         jackpotEntryId: selectedRow.entry.id
       });
@@ -1764,7 +1811,7 @@ const syncCartWithCatalog = () => {
     }
     if (line.source === "jackpot") {
       const entry = getJackpotEntryById(line.jackpotEntryId);
-      if (!entry || entry.productId !== line.productId || entry.variantId !== line.variantId) {
+      if (!entry || entry.productId !== line.productId) {
         return;
       }
     }
@@ -1845,7 +1892,7 @@ const checkout = () => {
     }
     if (line.source === "jackpot") {
       const entry = getJackpotEntryById(line.jackpotEntryId);
-      if (!entry || entry.productId !== line.productId || entry.variantId !== line.variantId) {
+      if (!entry || entry.productId !== line.productId) {
         missing.push(`${line.name} nicht mehr als Jackpot verfügbar`);
         return;
       }
@@ -2454,26 +2501,6 @@ const fillJackpotProductSelect = (keepProductId = "") => {
   productSelect.value = next;
 };
 
-const fillJackpotVariantSelect = (productId, keepVariantId = "") => {
-  if (!jackpotForm) {
-    return;
-  }
-  const variantSelect = jackpotForm.elements.variantId;
-  variantSelect.replaceChildren();
-  const product = getProductById(productId);
-  if (!product) {
-    return;
-  }
-  product.variants.forEach((variant) => {
-    const option = document.createElement("option");
-    option.value = variant.id;
-    option.textContent = `${variant.label} • Bestand ${variant.stock}`;
-    variantSelect.appendChild(option);
-  });
-  const next = product.variants.some((variant) => variant.id === keepVariantId) ? keepVariantId : product.variants[0]?.id || "";
-  variantSelect.value = next;
-};
-
 const clearJackpotForm = () => {
   if (!jackpotForm) {
     return;
@@ -2481,7 +2508,6 @@ const clearJackpotForm = () => {
   jackpotForm.reset();
   jackpotForm.elements.entryId.value = "";
   fillJackpotProductSelect();
-  fillJackpotVariantSelect(String(jackpotForm.elements.productId.value || ""));
 };
 
 const fillJackpotForm = (entry) => {
@@ -2490,7 +2516,6 @@ const fillJackpotForm = (entry) => {
   }
   jackpotForm.elements.entryId.value = entry.id;
   fillJackpotProductSelect(entry.productId);
-  fillJackpotVariantSelect(entry.productId, entry.variantId);
 };
 
 const renderJackpotList = () => {
@@ -2516,16 +2541,17 @@ const renderJackpotList = () => {
     })
     .forEach((entry) => {
       const product = getProductById(entry.productId);
-      const variant = getVariantById(product, entry.variantId);
       const li = document.createElement("li");
       li.className = "admin-product";
 
       const info = document.createElement("div");
       const name = document.createElement("div");
       name.className = "name";
-      name.textContent = product && variant ? `${product.name} (${variant.label})` : "Ungültiger Eintrag";
+      name.textContent = product ? product.name : "Ungültiger Eintrag";
       const meta = document.createElement("p");
-      meta.textContent = product && variant ? `Verfügbar im Bestand: ${remainingStock(product.id, variant.id)}` : "Bitte Eintrag prüfen";
+      meta.textContent = product
+        ? `Varianten: ${product.variants.length} • Verfügbar gesamt: ${getProductAvailableStock(product)}`
+        : "Bitte Eintrag prüfen";
       info.append(name, meta);
 
       const actions = document.createElement("div");
@@ -4198,12 +4224,6 @@ if (jackpotPriceInput) {
   });
 }
 
-if (jackpotForm) {
-  jackpotForm.elements.productId.addEventListener("change", () => {
-    fillJackpotVariantSelect(String(jackpotForm.elements.productId.value || ""));
-  });
-}
-
 if (newJackpotEntryBtn) {
   newJackpotEntryBtn.addEventListener("click", clearJackpotForm);
 }
@@ -4213,22 +4233,18 @@ if (jackpotForm) {
     event.preventDefault();
     const idInForm = String(jackpotForm.elements.entryId.value || "").trim();
     const productId = String(jackpotForm.elements.productId.value || "").trim();
-    const variantId = String(jackpotForm.elements.variantId.value || "").trim();
 
-    if (!productId || !variantId) {
+    if (!productId) {
       return;
     }
 
     const product = getProductById(productId);
-    const variant = getVariantById(product, variantId);
-    if (!product || !variant) {
-      window.alert("Bitte gültigen Artikel und Variante auswählen.");
+    if (!product) {
+      window.alert("Bitte einen gültigen Artikel auswählen.");
       return;
     }
 
-    const duplicate = jackpotConfig.entries.find(
-      (entry) => entry.productId === productId && entry.variantId === variantId && entry.id !== idInForm
-    );
+    const duplicate = jackpotConfig.entries.find((entry) => entry.productId === productId && entry.id !== idInForm);
     if (duplicate) {
       window.alert("Dieser Jackpot-Artikel ist bereits hinterlegt.");
       return;
@@ -4240,12 +4256,10 @@ if (jackpotForm) {
         return;
       }
       existing.productId = productId;
-      existing.variantId = variantId;
     } else {
       jackpotConfig.entries.push({
         id: makeUniqueJackpotEntryId(),
-        productId,
-        variantId
+        productId
       });
     }
 
