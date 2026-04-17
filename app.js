@@ -3409,10 +3409,26 @@ const buildAppStatePayload = () => {
   };
 };
 
-const applyAppStatePayload = (appData, { queueCloud = true } = {}) => {
-  const importedProducts = Array.isArray(appData?.products) ? appData.products.map((item) => normalizeProduct(item)) : [];
+const applyAppStatePayload = (appData, { queueCloud = true, preserveLocalImages = false } = {}) => {
+  let importedProducts = Array.isArray(appData?.products) ? appData.products.map((item) => normalizeProduct(item)) : [];
   if (importedProducts.length === 0) {
     throw new Error("Import abgebrochen: Keine gültigen Produkte gefunden.");
+  }
+
+  if (preserveLocalImages) {
+    const localImagesByProductId = new Map(
+      products
+        .map((product) => [product.id, String(product.image || "").trim()])
+        .filter(([, image]) => image.length > 0)
+    );
+    importedProducts = importedProducts.map((product) => {
+      const remoteImage = String(product.image || "").trim();
+      if (remoteImage) {
+        return product;
+      }
+      const localImage = localImagesByProductId.get(product.id) || "";
+      return localImage ? { ...product, image: localImage } : product;
+    });
   }
 
   const previousSuppress = suppressCloudPush;
@@ -3632,7 +3648,7 @@ const pullCloudState = async ({ silent = false, bootstrapIfMissing = true, force
       data.payload?.app && typeof data.payload.app === "object" && !Array.isArray(data.payload.app)
         ? data.payload.app
         : data.payload;
-    applyAppStatePayload(appData, { queueCloud: false });
+    applyAppStatePayload(appData, { queueCloud: false, preserveLocalImages: true });
     cloudLastRemoteTs = Number.isFinite(remoteTs) && remoteTs > 0 ? remoteTs : Date.now();
     cloudBootstrapDone = true;
     if (!silent) {
