@@ -73,7 +73,7 @@ const DEFAULT_SITE_PASSWORD = "1234";
 const DEFAULT_JACKPOT_NAME = "Jackpot";
 const DEFAULT_CLOUD_SYNC_ID = "explizit-live";
 const CLOUD_SYNC_TABLE = "merch_sync";
-const CLOUD_SYNC_PULL_INTERVAL_MS = 20000;
+const CLOUD_SYNC_PULL_INTERVAL_MS = 60000;
 const JACKPOT_PRODUCT_ID = "__jackpot__";
 
 const memoryStorage = new Map();
@@ -745,6 +745,7 @@ let cloudPullRunning = false;
 let cloudPushRunning = false;
 let cloudLastRemoteTs = 0;
 let cloudBootstrapDone = false;
+let cloudInitTriggered = false;
 
 const cartKey = (productId, variantId, source = "normal", refId = "") =>
   `${productId}::${variantId}::${source}${refId ? `::${refId}` : ""}`;
@@ -1104,6 +1105,10 @@ const unlockSiteAccess = () => {
     accessGate.hidden = true;
   }
   clearAccessError();
+  if (!cloudInitTriggered) {
+    cloudInitTriggered = true;
+    void initializeCloudSync({ withStatus: false });
+  }
 };
 
 const showHomeView = () => {
@@ -4664,4 +4669,3 @@ renderCart();
 renderVariantDialog();
 showHomeView();
 lockSiteAccess();
-void initializeCloudSync({ withStatus: false });
